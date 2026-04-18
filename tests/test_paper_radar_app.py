@@ -3,8 +3,10 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
-from paper_radar_app import discover_config_yaml_paths, reset_session_state_for_config
+from paper_radar_app import discover_config_yaml_paths, initialize_session, reset_session_state_for_config
 
 
 class PaperRadarAppHelperTests(unittest.TestCase):
@@ -66,6 +68,29 @@ class PaperRadarAppHelperTests(unittest.TestCase):
         self.assertIsNone(state["last_comparison"])
         self.assertEqual(state["preset_name"], "")
         self.assertEqual(state["weight_relevance"], 0.25)
+
+    def test_initialize_session_keeps_selected_yaml_on_rerun(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            selected = root / "selected.yaml"
+            startup = root / "startup.yaml"
+            for path in (selected, startup):
+                path.write_text("project:\n  name: demo\n", encoding="utf-8")
+
+            state = {
+                "initialized": True,
+                "config_source_path": str(selected.resolve()),
+            }
+            dummy_streamlit = SimpleNamespace(session_state=state)
+
+            with patch("paper_radar_app.st", dummy_streamlit), patch(
+                "paper_radar_app.load_config",
+                side_effect=AssertionError("initialize_session should not reload the startup config"),
+            ), patch("paper_radar_app.apply_config_to_session") as apply_config:
+                initialize_session(startup)
+
+            self.assertEqual(state["config_source_path"], str(selected.resolve()))
+            apply_config.assert_not_called()
 
 
 if __name__ == "__main__":

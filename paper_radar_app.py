@@ -100,7 +100,7 @@ FIELD_HELP = {
     "enable_semanticscholar": "Semantic Scholar에서 citation, venue, field 정보를 추가로 붙입니다. 후보 논문 수를 늘리는 기능은 아니고 메타데이터 enrich입니다.",
     "enable_openreview": "OpenReview에서 venue 단위로 논문을 추가 수집합니다. arXiv와 별도 source입니다.",
     "openreview_venues_text": "OpenReview venue id 목록입니다. 줄마다 하나씩 입력합니다.",
-    "openreview_keywords_text": "OpenReview 수집 결과 중 제목/초록/키워드에 들어 있어야 할 키워드입니다. 쉼표 또는 줄바꿈으로 구분합니다.",
+    "openreview_keywords_text": "OpenReview 수집 결과 중 제목/초록/키워드에 들어 있어야 할 필터 키워드입니다. 쉼표 또는 줄바꿈으로 구분합니다.",
     "enable_openalex": "OpenAlex에서 citation, topic, OA 정보를 추가로 붙입니다. 후보 논문 수를 늘리는 기능은 아니고 메타데이터 enrich입니다.",
     "include_keywords_text": "이 키워드가 논문 텍스트에 많이 등장할수록 relevance 점수가 올라갑니다.",
     "exclude_keywords_text": "이 키워드가 발견되면 해당 논문은 바로 archive 처리됩니다.",
@@ -142,7 +142,7 @@ def main() -> None:
     st.caption(f"SQLite: `{DEFAULT_DB_PATH}`")
 
     with st.sidebar:
-        render_sidebar_v2(discovered_configs, current_config_label)
+        render_sidebar(discovered_configs, current_config_label)
 
     fetch_options = build_fetch_options_from_session()
     rank_options = build_rank_options_from_session()
@@ -173,7 +173,7 @@ def main() -> None:
             top_k=rank_options.daily_top_k,
             digest_options=digest_options,
         )
-        st.success("현재 결과를 `data/` 아래 digest와 `papers.jsonl`로 저장했습니다.")
+        st.success("현재 결과를 data/ 아래 digest와 papers.jsonl로 저장했습니다.")
     button_cols[2].download_button(
         label="현재 YAML 다운로드",
         data=serialize_config(current_config),
@@ -272,10 +272,14 @@ def label_for_path(paths: Mapping[str, Path], target: Path) -> str:
 
 
 def initialize_session(config_path: Path) -> None:
-    resolved = config_path.expanduser().resolve()
-    if st.session_state.get("initialized") and st.session_state.get("config_source_path") == str(resolved):
-        return
+    if st.session_state.get("initialized"):
+        existing_path = st.session_state.get("config_source_path")
+        if existing_path:
+            candidate = Path(existing_path).expanduser()
+            if candidate.exists():
+                return
 
+    resolved = config_path.expanduser().resolve()
     config = load_config(resolved)
     st.session_state["initialized"] = True
     st.session_state["config_source_path"] = str(resolved)
@@ -298,75 +302,6 @@ def reset_session_state_for_config(state: MutableMapping[str, Any]) -> None:
     state["preset_name"] = ""
 
 
-def render_sidebar(discovered_configs: Mapping[str, Path], current_label: str) -> None:
-    st.header("YAML 선택")
-    labels = list(discovered_configs.keys())
-    if st.session_state.get("config_selector") not in labels:
-        st.session_state["config_selector"] = current_label if current_label in labels else labels[0]
-    st.selectbox("YAML 파일", labels, key="config_selector")
-    if st.button("불러오기", use_container_width=True):
-        load_yaml_into_session(discovered_configs[st.session_state["config_selector"]])
-        st.rerun()
-
-    st.divider()
-    st.header("Preset 저장")
-    st.text_input("저장 이름", key="preset_name")
-    if st.button("현재 설정 저장", use_container_width=True):
-        preset_name = st.session_state["preset_name"].strip()
-        if not preset_name:
-            st.error("저장할 preset 이름을 입력하세요.")
-        else:
-            save_current_preset(preset_name)
-            st.success(f"`{preset_name}` preset을 저장했습니다.")
-
-    st.divider()
-    st.header("Fetch 설정")
-    st.number_input("검색 기간 (days_back)", min_value=1, max_value=365, key="days_back")
-    st.number_input("query별 최대 결과 수", min_value=1, max_value=500, key="max_results_per_query")
-    st.text_area("arXiv queries", height=140, key="queries_text")
-    category_options = sorted(set(CATEGORY_OPTIONS + st.session_state.get("categories", [])))
-    st.multiselect("카테고리", category_options, key="categories")
-    st.toggle("Semantic Scholar enrich", key="enable_semanticscholar")
-    st.toggle("OpenReview 수집", key="enable_openreview")
-    st.text_area("OpenReview venues", height=90, key="openreview_venues_text")
-    st.text_area("OpenReview keywords", height=90, key="openreview_keywords_text")
-    st.toggle("OpenAlex enrich", key="enable_openalex")
-
-    st.divider()
-    st.header("Ranking 설정")
-    st.text_area("include_keywords", height=120, key="include_keywords_text")
-    st.text_area("exclude_keywords", height=80, key="exclude_keywords_text")
-    for weight_key in WEIGHT_KEYS:
-        st.number_input(
-            f"weight.{weight_key}",
-            min_value=0.0,
-            step=0.01,
-            format="%.4f",
-            key=f"weight_{weight_key}",
-        )
-    for bucket_key in BUCKET_KEYS:
-        st.number_input(
-            f"bucket.{bucket_key}",
-            min_value=0.0,
-            max_value=100.0,
-            step=1.0,
-            format="%.1f",
-            key=f"bucket_{bucket_key}",
-        )
-
-    st.divider()
-    st.header("Digest 설정")
-    st.number_input("daily_top_k", min_value=1, max_value=100, key="daily_top_k")
-    st.number_input("weekly_top_k_per_track", min_value=1, max_value=50, key="weekly_top_k_per_track")
-    st.text_area("track order", height=120, key="digest_tracks_text")
-    st.text_area(
-        "custom track_definitions (YAML)",
-        height=160,
-        key="track_definitions_text",
-        help="예시:\nmy_track:\n  label: My Track\n  keywords:\n    - keyword one",
-    )
-
-
 def load_yaml_into_session(path: Path) -> None:
     config = load_config(path)
     st.session_state["config_source_path"] = str(path.resolve())
@@ -375,7 +310,7 @@ def load_yaml_into_session(path: Path) -> None:
     apply_config_to_session(config)
 
 
-def render_sidebar_v2(discovered_configs: Mapping[str, Path], current_label: str) -> None:
+def render_sidebar(discovered_configs: Mapping[str, Path], current_label: str) -> None:
     st.header("YAML 선택")
     labels = list(discovered_configs.keys())
     if st.session_state.get("config_selector") not in labels:
@@ -683,7 +618,7 @@ def show_metrics(ranked_papers: list[Paper]) -> None:
 
 def render_single_run_tab(ranked_papers: list[Paper], rank_options: RankOptions) -> None:
     if not ranked_papers:
-        st.info("아직 fetch 결과가 없습니다. 설정을 조정한 뒤 `Fetch`를 실행하세요.")
+        st.info("아직 fetch 결과가 없습니다. 설정을 조정한 뒤 Fetch를 실행하세요.")
         return
 
     if st.session_state.get("last_source_status"):
