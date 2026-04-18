@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import concurrent.futures
 import copy
 import datetime as dt
 import hashlib
@@ -13,7 +12,7 @@ import sqlite3
 import sys
 import time
 import xml.etree.ElementTree as ET
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
@@ -28,11 +27,9 @@ except ModuleNotFoundError:
 ARXIV_API = "https://export.arxiv.org/api/query"
 OPENREVIEW_API = "https://api2.openreview.net/notes"
 OPENALEX_WORKS_API = "https://api.openalex.org/works"
-OPENAI_CHAT_COMPLETIONS_API = "https://api.openai.com/v1/chat/completions"
 SEMANTIC_SCHOLAR_API = "https://api.semanticscholar.org/graph/v1/paper/search/bulk"
 
 DEFAULT_CONFIG_PATH = Path("paper_radar_config.example.yaml")
-DEFAULT_PROMPTS_PATH = Path("paper_radar_prompts.example.yaml")
 DEFAULT_PRESET_DIR = Path("data/gui_presets")
 DEFAULT_TIMEZONE = "Asia/Seoul"
 DEFAULT_WARNING_LOG_PATH = Path("data/runtime_warnings.log")
@@ -233,10 +230,6 @@ class Paper:
     track_ids: list[str] = field(default_factory=list)
     primary_track: str | None = None
     track_reasons: dict[str, list[str]] = field(default_factory=dict)
-    summary_ko: str | None = None
-    summary_status: str | None = None
-    evaluator_status: str | None = None
-    evaluator_notes: dict[str, Any] = field(default_factory=dict)
     source_metadata: dict[str, Any] = field(default_factory=dict)
     raw: dict[str, Any] = field(default_factory=dict)
 
@@ -275,21 +268,6 @@ class RankOptions:
     weights: dict[str, float]
     buckets: dict[str, float]
     daily_top_k: int
-
-
-@dataclass
-class LLMOptions:
-    enabled: bool = False
-    provider: str = "openai"
-    model_summary: str = "gpt-4o-mini"
-    model_evaluator: str = "gpt-4o-mini"
-    summary_top_n: int = 5
-    prompts_path: str | None = None
-    summary_prompt_id: str = "daily_radar_ko"
-    evaluator_prompt_id: str = "evaluator_ko"
-    max_concurrency: int = 2
-    timeout_s: int = 45
-    api_key_env: str = "OPENAI_API_KEY"
 
 
 @dataclass
@@ -519,22 +497,13 @@ def normalize_weight_map(weights: Mapping[str, float]) -> tuple[dict[str, float]
 
 
 def paper_from_dict(data: Mapping[str, Any]) -> Paper:
-    return Paper(**dict(data))
+    allowed_fields = {item.name for item in fields(Paper)}
+    payload = {key: value for key, value in dict(data).items() if key in allowed_fields}
+    return Paper(**payload)
 
 
 def clone_paper(paper: Paper) -> Paper:
     return paper_from_dict(asdict(paper))
-
-
-def resolve_prompts_path(path: str | Path | None, config_path: str | Path | None = None) -> Path | None:
-    if not path:
-        return None
-    prompt_path = Path(path).expanduser()
-    if prompt_path.is_absolute():
-        return prompt_path
-    if config_path is not None:
-        return Path(config_path).expanduser().resolve().parent / prompt_path
-    return prompt_path
 
 
 def config_hash(config: Mapping[str, Any]) -> str:
@@ -575,27 +544,6 @@ def build_rank_options_from_config(config: Mapping[str, Any]) -> RankOptions:
     )
 
 
-def build_llm_options_from_config(
-    config: Mapping[str, Any],
-    config_path: str | Path | None = None,
-) -> LLMOptions:
-    llm_cfg = config.get("llm", {})
-    prompts_path = resolve_prompts_path(llm_cfg.get("prompts_path") or DEFAULT_PROMPTS_PATH, config_path)
-    return LLMOptions(
-        enabled=bool(llm_cfg.get("enabled", False)),
-        provider=str(llm_cfg.get("provider", "openai")),
-        model_summary=str(llm_cfg.get("model_summary", "gpt-4o-mini")),
-        model_evaluator=str(llm_cfg.get("model_evaluator", "gpt-4o-mini")),
-        summary_top_n=int(llm_cfg.get("summary_top_n", 5)),
-        prompts_path=str(prompts_path) if prompts_path is not None else None,
-        summary_prompt_id=str(llm_cfg.get("summary_prompt_id", "daily_radar_ko")),
-        evaluator_prompt_id=str(llm_cfg.get("evaluator_prompt_id", "evaluator_ko")),
-        max_concurrency=int(llm_cfg.get("max_concurrency", 2)),
-        timeout_s=int(llm_cfg.get("timeout_s", 45)),
-        api_key_env=str(llm_cfg.get("api_key_env", "OPENAI_API_KEY")),
-    )
-
-
 def build_digest_options_from_config(config: Mapping[str, Any]) -> DigestOptions:
     digest_cfg = config.get("digest", {})
     configured_tracks = [str(track).strip() for track in digest_cfg.get("tracks", []) if str(track).strip()]
@@ -620,7 +568,6 @@ def build_config_from_options(
     base_config: Mapping[str, Any],
     fetch_options: FetchOptions,
     rank_options: RankOptions,
-    llm_options: LLMOptions | None = None,
     digest_options: DigestOptions | None = None,
 ) -> dict[str, Any]:
     config = copy.deepcopy(dict(base_config))
@@ -634,7 +581,6 @@ def build_config_from_options(
     config["ranking"].setdefault("weights", {})
     config["ranking"].setdefault("buckets", {})
     config.setdefault("digest", {})
-    config.setdefault("llm", {})
 
     normalized_weights, _, _ = normalize_weight_map(rank_options.weights)
 
@@ -654,21 +600,7 @@ def build_config_from_options(
     config["ranking"]["weights"] = normalized_weights
     config["ranking"]["buckets"] = {key: float(rank_options.buckets.get(key, 0.0)) for key in BUCKET_KEYS}
     config["digest"]["daily_top_k"] = int(rank_options.daily_top_k)
-
-    if llm_options is not None:
-        config["llm"] = {
-            "enabled": bool(llm_options.enabled),
-            "provider": llm_options.provider,
-            "model_summary": llm_options.model_summary,
-            "model_evaluator": llm_options.model_evaluator,
-            "summary_top_n": int(llm_options.summary_top_n),
-            "prompts_path": llm_options.prompts_path or str(DEFAULT_PROMPTS_PATH),
-            "summary_prompt_id": llm_options.summary_prompt_id,
-            "evaluator_prompt_id": llm_options.evaluator_prompt_id,
-            "max_concurrency": int(llm_options.max_concurrency),
-            "timeout_s": int(llm_options.timeout_s),
-            "api_key_env": llm_options.api_key_env,
-        }
+    config.pop("llm", None)
 
     if digest_options is not None:
         config["digest"]["daily_top_k"] = int(digest_options.daily_top_k)
@@ -734,27 +666,10 @@ def papers_to_records(papers: Iterable[Paper]) -> list[dict[str, Any]]:
                 "venue": paper.venue,
                 "decision": paper.decision,
                 "review_signal": paper.review_signal,
-                "summary_status": paper.summary_status,
-                "evaluator_status": paper.evaluator_status,
                 "url": paper.url,
             }
         )
     return records
-
-
-def load_prompt_bundle(path: str | Path | None) -> dict[str, Any]:
-    bundle = copy.deepcopy(BUILTIN_PROMPTS)
-    if not path:
-        return bundle
-    prompt_path = Path(path)
-    if not prompt_path.exists():
-        return bundle
-    loaded = load_config(prompt_path)
-    if isinstance(loaded, dict):
-        for key, value in loaded.items():
-            if isinstance(value, dict):
-                bundle[str(key)] = value
-    return bundle
 
 
 def compute_canonical_key(paper: Paper) -> str:
@@ -1471,53 +1386,6 @@ class RuleRanker:
         delta_days = max(0.0, (dt.datetime.now(dt.timezone.utc) - pub).days)
         return max(0.0, 100.0 - delta_days * 3.0)
 
-
-class OpenAIChatClient:
-    def __init__(self, api_key: str, timeout_s: int = 45) -> None:
-        self.api_key = api_key
-        self.timeout_s = timeout_s
-
-    def json_completion(
-        self,
-        *,
-        model: str,
-        system_prompt: str,
-        user_prompt: str,
-    ) -> dict[str, Any]:
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-            "X-Client-Request-Id": hashlib.sha1(user_prompt.encode("utf-8")).hexdigest()[:32],
-        }
-        payload = {
-            "model": model,
-            "temperature": 0.1,
-            "response_format": {"type": "json_object"},
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-        }
-        response = requests.post(
-            OPENAI_CHAT_COMPLETIONS_API,
-            headers=headers,
-            json=payload,
-            timeout=self.timeout_s,
-        )
-        response.raise_for_status()
-        data = response.json()
-        content = (
-            data.get("choices", [{}])[0]
-            .get("message", {})
-            .get("content", "")
-        )
-        if isinstance(content, list):
-            content = "".join(part.get("text", "") for part in content if isinstance(part, dict))
-        if not content:
-            return {}
-        return json.loads(content)
-
-
 class PaperRadarStore:
     def __init__(self, db_path: str | Path = DEFAULT_DB_PATH) -> None:
         self.path = Path(db_path)
@@ -1577,34 +1445,6 @@ class PaperRadarStore:
                     bucket TEXT,
                     score_json TEXT NOT NULL,
                     paper_snapshot TEXT NOT NULL,
-                    FOREIGN KEY(run_id) REFERENCES runs(id),
-                    FOREIGN KEY(paper_id) REFERENCES papers(id)
-                );
-
-                CREATE TABLE IF NOT EXISTS summaries (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    run_id INTEGER NOT NULL,
-                    paper_id INTEGER NOT NULL,
-                    prompt_version TEXT,
-                    model TEXT,
-                    draft_text TEXT,
-                    final_text TEXT,
-                    status TEXT,
-                    summary_json TEXT,
-                    created_at TEXT NOT NULL,
-                    FOREIGN KEY(run_id) REFERENCES runs(id),
-                    FOREIGN KEY(paper_id) REFERENCES papers(id)
-                );
-
-                CREATE TABLE IF NOT EXISTS evaluations (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    run_id INTEGER NOT NULL,
-                    paper_id INTEGER NOT NULL,
-                    model TEXT,
-                    verdict TEXT,
-                    status TEXT,
-                    evaluation_json TEXT,
-                    created_at TEXT NOT NULL,
                     FOREIGN KEY(run_id) REFERENCES runs(id),
                     FOREIGN KEY(paper_id) REFERENCES papers(id)
                 );
@@ -1700,8 +1540,6 @@ class PaperRadarStore:
                         json.dumps(asdict(paper), ensure_ascii=False, sort_keys=True),
                     ),
                 )
-                self._insert_summary(connection, run_id, paper_id, paper)
-                self._insert_evaluation(connection, run_id, paper_id, paper)
                 self._insert_tracks(connection, run_id, paper_id, paper)
 
     def load_run_papers(self, run_id: int) -> list[Paper]:
@@ -1806,50 +1644,6 @@ class PaperRadarStore:
                     json.dumps(payload, ensure_ascii=False, sort_keys=True),
                 ),
             )
-
-    def _insert_summary(self, connection: sqlite3.Connection, run_id: int, paper_id: int, paper: Paper) -> None:
-        if paper.summary_status is None and paper.summary_ko is None:
-            return
-        connection.execute(
-            """
-            INSERT INTO summaries (
-                run_id, paper_id, prompt_version, model, draft_text, final_text, status, summary_json, created_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                run_id,
-                paper_id,
-                paper.evaluator_notes.get("summary_prompt_id"),
-                paper.evaluator_notes.get("summary_model"),
-                paper.evaluator_notes.get("summary_draft"),
-                paper.summary_ko,
-                paper.summary_status,
-                json.dumps(paper.evaluator_notes.get("summary_json", {}), ensure_ascii=False, sort_keys=True),
-                dt.datetime.now(dt.timezone.utc).isoformat(),
-            ),
-        )
-
-    def _insert_evaluation(self, connection: sqlite3.Connection, run_id: int, paper_id: int, paper: Paper) -> None:
-        if paper.evaluator_status is None and not paper.evaluator_notes:
-            return
-        connection.execute(
-            """
-            INSERT INTO evaluations (
-                run_id, paper_id, model, verdict, status, evaluation_json, created_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                run_id,
-                paper_id,
-                paper.evaluator_notes.get("evaluator_model"),
-                paper.evaluator_status,
-                paper.evaluator_status,
-                json.dumps(paper.evaluator_notes, ensure_ascii=False, sort_keys=True),
-                dt.datetime.now(dt.timezone.utc).isoformat(),
-            ),
-        )
 
     def _insert_tracks(self, connection: sqlite3.Connection, run_id: int, paper_id: int, paper: Paper) -> None:
         if not paper.track_ids:
@@ -2020,158 +1814,11 @@ def rank_papers(papers: Iterable[Paper], rank_options: RankOptions) -> list[Pape
     return sorted(ranked, key=lambda paper: paper.final_score, reverse=True)
 
 
-def summarize_top_papers(
-    papers: Iterable[Paper],
-    llm_options: LLMOptions,
-    env: Mapping[str, str] | None = None,
-) -> list[Paper]:
-    ranked = [clone_paper(paper) for paper in papers]
-    if not llm_options.enabled:
-        for paper in ranked:
-            if paper.summary_status is None:
-                paper.summary_status = "disabled"
-            if paper.evaluator_status is None:
-                paper.evaluator_status = "disabled"
-        return ranked
-    if llm_options.provider.lower() != "openai":
-        _warn(f"[warn] Unsupported LLM provider: {llm_options.provider}")
-        return ranked
-
-    env_map = os.environ if env is None else env
-    api_key = env_map.get(llm_options.api_key_env)
-    if not api_key:
-        _warn(f"[warn] {llm_options.api_key_env} is not set. Skipping summary/evaluator.")
-        for paper in ranked:
-            paper.summary_status = "missing_api_key"
-            paper.evaluator_status = "missing_api_key"
-        return ranked
-
-    prompt_bundle = load_prompt_bundle(llm_options.prompts_path)
-    client = OpenAIChatClient(api_key=api_key, timeout_s=llm_options.timeout_s)
-    target_count = max(0, min(llm_options.summary_top_n, len(ranked)))
-    indexed_papers = list(enumerate(ranked[:target_count]))
-
-    def worker(item: tuple[int, Paper]) -> tuple[int, Paper]:
-        idx, paper = item
-        return idx, _summarize_and_evaluate_paper(paper, llm_options, prompt_bundle, client)
-
-    if not indexed_papers:
-        return ranked
-
-    max_workers = max(1, min(llm_options.max_concurrency, len(indexed_papers)))
-    try:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-            for idx, paper in executor.map(worker, indexed_papers):
-                ranked[idx] = paper
-    except Exception as exc:
-        _warn(f"[warn] Summary/evaluator batch failed: {exc}")
-    for paper in ranked[target_count:]:
-        if paper.summary_status is None:
-            paper.summary_status = "skipped_top_n"
-        if paper.evaluator_status is None:
-            paper.evaluator_status = "skipped_top_n"
-    return ranked
-
-
-def _summarize_and_evaluate_paper(
-    paper: Paper,
-    llm_options: LLMOptions,
-    prompt_bundle: Mapping[str, Any],
-    client: OpenAIChatClient,
-) -> Paper:
-    summary_prompt = prompt_bundle.get(llm_options.summary_prompt_id) or BUILTIN_PROMPTS["daily_radar_ko"]
-    evaluator_prompt = prompt_bundle.get(llm_options.evaluator_prompt_id) or BUILTIN_PROMPTS["evaluator_ko"]
-    evidence = {
-        "venue": paper.venue,
-        "topics": paper.topics,
-        "citations": paper.citations,
-        "decision": paper.decision,
-        "review_signal": paper.review_signal,
-        "tracks": paper.track_ids,
-    }
-    metadata_text = json.dumps(evidence, ensure_ascii=False, sort_keys=True)
-
-    try:
-        summary_json = client.json_completion(
-            model=llm_options.model_summary,
-            system_prompt=str(summary_prompt.get("system", BUILTIN_PROMPTS["daily_radar_ko"]["system"])),
-            user_prompt=str(summary_prompt.get("user_template", BUILTIN_PROMPTS["daily_radar_ko"]["user_template"])).format(
-                title=paper.title,
-                abstract=paper.abstract,
-                categories=", ".join(paper.categories),
-                metadata=metadata_text,
-            ),
-        )
-        draft_text = _render_summary(summary_json)
-        paper.summary_status = "complete"
-        paper.summary_ko = draft_text
-        paper.evaluator_notes["summary_json"] = summary_json
-        paper.evaluator_notes["summary_draft"] = draft_text
-        paper.evaluator_notes["summary_model"] = llm_options.model_summary
-        paper.evaluator_notes["summary_prompt_id"] = llm_options.summary_prompt_id
-    except Exception as exc:
-        _warn(f"[warn] Summary generation failed for {paper.title!r}: {exc}")
-        paper.summary_status = "error"
-        paper.evaluator_status = "skipped_due_to_summary_error"
-        paper.evaluator_notes["summary_error"] = str(exc)
-        return paper
-
-    try:
-        evaluation_json = client.json_completion(
-            model=llm_options.model_evaluator,
-            system_prompt=str(
-                evaluator_prompt.get("system", BUILTIN_PROMPTS["evaluator_ko"]["system"])
-            ),
-            user_prompt=str(
-                evaluator_prompt.get("user_template", BUILTIN_PROMPTS["evaluator_ko"]["user_template"])
-            ).format(
-                title=paper.title,
-                abstract=paper.abstract,
-                evidence=metadata_text,
-                draft=draft_text,
-            ),
-        )
-    except Exception as exc:
-        _warn(f"[warn] Summary evaluator failed for {paper.title!r}: {exc}")
-        paper.evaluator_status = "error"
-        paper.evaluator_notes["evaluation_error"] = str(exc)
-        return paper
-
-    verdict = str(evaluation_json.get("verdict", "revise")).lower()
-    notes = {
-        "unsupported_claims": evaluation_json.get("unsupported_claims") or [],
-        "novelty_overclaim": bool(evaluation_json.get("novelty_overclaim", False)),
-        "simulation_vs_real_error": bool(evaluation_json.get("simulation_vs_real_error", False)),
-        "baseline_ablation_issue": bool(evaluation_json.get("baseline_ablation_issue", False)),
-        "notes": evaluation_json.get("notes") or "",
-        "revised_summary": evaluation_json.get("revised_summary") or "",
-        "evaluator_model": llm_options.model_evaluator,
-        "evaluator_prompt_id": llm_options.evaluator_prompt_id,
-    }
-    paper.evaluator_notes.update(notes)
-    if verdict not in {"pass", "revise", "fail"}:
-        verdict = "revise"
-    paper.evaluator_status = verdict
-    if verdict in {"revise", "fail"} and notes["revised_summary"]:
-        paper.summary_ko = str(notes["revised_summary"])
-    return paper
-
-
 def build_track_digest(
     papers: Sequence[Paper],
     digest_options: DigestOptions,
-    *,
-    exclude_failed: bool = True,
 ) -> TrackDigest:
     ranked = sorted([clone_paper(paper) for paper in papers], key=lambda item: item.final_score, reverse=True)
-    if exclude_failed:
-        filtered = [
-            paper
-            for paper in ranked
-            if paper.evaluator_status not in {"fail"} and paper.summary_status not in {"error"}
-        ]
-        if filtered:
-            ranked = filtered
 
     ordered_tracks = [track for track in digest_options.tracks if track]
     if TRACK_UNASSIGNED not in ordered_tracks:
@@ -2276,7 +1923,6 @@ def execute_pipeline(
 ) -> RunExecution:
     fetch_options = build_fetch_options_from_config(config)
     rank_options = build_rank_options_from_config(config)
-    llm_options = build_llm_options_from_config(config, config_path=config_path)
     digest_options = build_digest_options_from_config(config)
     config_hash_value = config_hash(config)
     fetch_signature = fetch_options_signature(fetch_options)
@@ -2299,7 +1945,6 @@ def execute_pipeline(
         source_status.update(enrich_status)
         tracked = assign_tracks(enriched, digest_options)
         ranked = rank_papers(tracked, rank_options)
-        ranked = summarize_top_papers(ranked, llm_options, env=env)
         track_digest = build_track_digest(ranked, digest_options)
         if store is not None and run_id is not None:
             store.persist_ranked_run(run_id, ranked)
@@ -2570,11 +2215,9 @@ def _digest_paper_lines(idx: int, paper: Paper) -> list[str]:
         lines.append(f"- Venue: {paper.venue}")
     if paper.decision:
         lines.append(f"- Decision: {paper.decision}")
-    if paper.summary_ko:
-        lines.append("- Summary:")
-        lines.append(paper.summary_ko)
-    else:
-        lines.append(f"- Abstract: {paper.abstract[:500]}...")
+    abstract_preview = paper.abstract[:500].strip()
+    suffix = "..." if len(paper.abstract) > 500 else ""
+    lines.append(f"- Abstract: {abstract_preview}{suffix}")
     lines.append(f"- URL: {paper.url}")
     return lines
 

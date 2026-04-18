@@ -3,9 +3,10 @@ from __future__ import annotations
 import copy
 import datetime as dt
 import json
+import re
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable, Mapping, MutableMapping
 
 try:
     import pandas as pd
@@ -27,24 +28,21 @@ except ModuleNotFoundError:
     runtime_yaml = None
 
 from paper_radar_core import (
+    BUCKET_KEYS,
     DEFAULT_CONFIG_PATH,
     DEFAULT_DB_PATH,
     DEFAULT_PRESET_DIR,
-    DEFAULT_TIMEZONE,
-    BUCKET_KEYS,
-    TRACK_UNASSIGNED,
-    WEIGHT_KEYS,
     DigestOptions,
     FetchOptions,
-    LLMOptions,
     Paper,
     PaperRadarStore,
     RankOptions,
+    TRACK_UNASSIGNED,
+    WEIGHT_KEYS,
     assign_tracks,
     build_config_from_options,
     build_digest_options_from_config,
     build_fetch_options_from_config,
-    build_llm_options_from_config,
     build_rank_options_from_config,
     build_track_digest,
     compare_presets,
@@ -77,30 +75,46 @@ CATEGORY_OPTIONS = [
     "stat.ML",
 ]
 
+RESET_SESSION_KEYS = (
+    "fetched_raw_papers",
+    "last_fetch_signature",
+    "last_fetch_at",
+    "last_fetch_count",
+    "last_run_id",
+    "last_source_status",
+    "selected_paper_label",
+    "last_comparison",
+    "compare_config_a",
+    "compare_config_b",
+    "compare_run_a",
+    "compare_run_b",
+)
+
 
 def main() -> None:
-    config_path = get_runtime_config_path()
     st.set_page_config(page_title="Paper Radar GUI", layout="wide")
-    st.title("Paper Radar GUI")
-    st.caption(f"Config: `{config_path}`")
-    st.caption(f"SQLite: `{DEFAULT_DB_PATH}`")
 
-    initialize_session(config_path)
-    preset_paths = get_preset_paths(config_path)
+    initial_config_path = get_runtime_config_path()
+    initialize_session(initial_config_path)
+    discovered_configs = discover_config_yaml_paths(extra_paths=[Path(st.session_state["config_source_path"])])
+    current_config_path = Path(st.session_state["config_source_path"])
+    current_config_label = label_for_path(discovered_configs, current_config_path)
     store = PaperRadarStore(DEFAULT_DB_PATH)
 
+    st.title("Paper Radar GUI")
+    st.caption(f"현재 YAML: `{current_config_path}`")
+    st.caption(f"SQLite: `{DEFAULT_DB_PATH}`")
+
     with st.sidebar:
-        render_sidebar(config_path, preset_paths)
+        render_sidebar(discovered_configs, current_config_label)
 
     fetch_options = build_fetch_options_from_session()
     rank_options = build_rank_options_from_session()
-    llm_options = build_llm_options_from_session(config_path)
     digest_options = build_digest_options_from_session()
     current_config = build_config_from_options(
         st.session_state["config_template"],
         fetch_options,
         rank_options,
-        llm_options,
         digest_options,
     )
     current_fetch_signature = fetch_options_signature(fetch_options)
@@ -109,11 +123,11 @@ def main() -> None:
         and st.session_state.get("last_fetch_signature") != current_fetch_signature
     )
 
-    show_top_controls(rank_options, llm_options, needs_refetch)
+    show_top_controls(rank_options, needs_refetch)
 
     button_cols = st.columns([1, 1, 1, 2])
     if button_cols[0].button("Fetch", type="primary", use_container_width=True):
-        run_fetch(current_config, config_path, current_fetch_signature)
+        run_fetch(current_config, current_config_path, current_fetch_signature)
         needs_refetch = False
     if button_cols[1].button("Export", use_container_width=True):
         ranked_now = rank_current_session_papers(rank_options, digest_options)
@@ -123,9 +137,9 @@ def main() -> None:
             top_k=rank_options.daily_top_k,
             digest_options=digest_options,
         )
-        st.success("`data/`에 daily/weekly digest와 papers.jsonl을 저장했습니다.")
+        st.success("현재 결과를 `data/` 아래 digest와 `papers.jsonl`로 저장했습니다.")
     button_cols[2].download_button(
-        label="현재 config 다운로드",
+        label="현재 YAML 다운로드",
         data=serialize_config(current_config),
         file_name="paper_radar_gui_config.yaml",
         mime="text/yaml",
@@ -145,49 +159,123 @@ def main() -> None:
     with tabs[1]:
         render_digest_tab(ranked_papers, digest_options)
     with tabs[2]:
-        render_compare_tab(store, preset_paths)
+        render_compare_tab(store, discovered_configs)
 
 
 def get_runtime_config_path() -> Path:
     return get_config_path()
 
 
+def discover_config_yaml_paths(
+    *,
+    repo_root: Path | None = None,
+    preset_dir: Path = DEFAULT_PRESET_DIR,
+    extra_paths: Iterable[Path] = (),
+) -> dict[str, Path]:
+    root = (repo_root or Path(".")).resolve()
+    preset_root = preset_dir.resolve()
+    paths: list[Path] = []
+
+    for path in sorted(root.glob("paper_radar_config*.yaml")):
+        if path.name == "paper_radar_prompts.example.yaml":
+            continue
+        paths.append(path.resolve())
+
+    if preset_root.exists():
+        for path in sorted(preset_root.glob("*.yaml")):
+            paths.append(path.resolve())
+
+    for extra_path in extra_paths:
+        candidate = Path(extra_path).expanduser().resolve()
+        if candidate.suffix.lower() != ".yaml":
+            continue
+        if candidate.name == "paper_radar_prompts.example.yaml":
+            continue
+        paths.append(candidate)
+
+    unique_paths: list[Path] = []
+    seen: set[Path] = set()
+    for path in paths:
+        if path in seen or not path.exists():
+            continue
+        seen.add(path)
+        unique_paths.append(path)
+
+    labeled: dict[str, Path] = {}
+    for path in unique_paths:
+        label = build_config_label(path, root=root, preset_root=preset_root)
+        if label in labeled:
+            label = f"{label} [{path.parent.name}]"
+        labeled[label] = path
+    return labeled
+
+
+def build_config_label(path: Path, *, root: Path, preset_root: Path) -> str:
+    resolved = path.resolve()
+    if resolved == DEFAULT_CONFIG_PATH.resolve():
+        return f"기본 예제 ({resolved.name})"
+    try:
+        if resolved.is_relative_to(preset_root):
+            return f"preset: {resolved.stem}"
+    except ValueError:
+        pass
+    try:
+        if resolved.is_relative_to(root):
+            return str(resolved.relative_to(root))
+    except ValueError:
+        pass
+    return resolved.name
+
+
+def label_for_path(paths: Mapping[str, Path], target: Path) -> str:
+    resolved_target = target.resolve()
+    for label, path in paths.items():
+        if path.resolve() == resolved_target:
+            return label
+    return next(iter(paths))
+
+
 def initialize_session(config_path: Path) -> None:
     resolved = config_path.expanduser().resolve()
-    if (
-        st.session_state.get("initialized")
-        and st.session_state.get("config_source_path") == str(resolved)
-    ):
+    if st.session_state.get("initialized") and st.session_state.get("config_source_path") == str(resolved):
         return
 
     config = load_config(resolved)
-    apply_config_to_session(config, resolved)
-    st.session_state["config_template"] = copy.deepcopy(config)
-    st.session_state["config_source_path"] = str(resolved)
-    st.session_state["fetched_raw_papers"] = []
-    st.session_state["last_fetch_signature"] = None
-    st.session_state["last_fetch_at"] = None
-    st.session_state["last_fetch_count"] = 0
-    st.session_state["last_run_id"] = None
-    st.session_state["last_source_status"] = {}
-    st.session_state["selected_paper_label"] = ""
-    st.session_state["preset_name"] = ""
-    st.session_state["preset_selector"] = get_default_preset_label(resolved)
     st.session_state["initialized"] = True
+    st.session_state["config_source_path"] = str(resolved)
+    st.session_state["config_template"] = copy.deepcopy(config)
+    reset_session_state_for_config(st.session_state)
+    apply_config_to_session(config)
 
 
-def render_sidebar(config_path: Path, preset_paths: dict[str, Path]) -> None:
-    st.header("Presets")
-    preset_labels = list(preset_paths.keys())
-    if st.session_state.get("preset_selector") not in preset_labels:
-        st.session_state["preset_selector"] = preset_labels[0]
-    st.selectbox("불러올 preset", preset_labels, key="preset_selector")
-    preset_cols = st.columns(2)
-    if preset_cols[0].button("Preset 로드", use_container_width=True):
-        load_preset_into_session(preset_paths[st.session_state["preset_selector"]], config_path)
+def reset_session_state_for_config(state: MutableMapping[str, Any]) -> None:
+    for key in RESET_SESSION_KEYS:
+        state.pop(key, None)
+    state["fetched_raw_papers"] = []
+    state["last_fetch_signature"] = None
+    state["last_fetch_at"] = None
+    state["last_fetch_count"] = 0
+    state["last_run_id"] = None
+    state["last_source_status"] = {}
+    state["selected_paper_label"] = ""
+    state["last_comparison"] = None
+    state["preset_name"] = ""
+
+
+def render_sidebar(discovered_configs: Mapping[str, Path], current_label: str) -> None:
+    st.header("YAML 선택")
+    labels = list(discovered_configs.keys())
+    if st.session_state.get("config_selector") not in labels:
+        st.session_state["config_selector"] = current_label if current_label in labels else labels[0]
+    st.selectbox("YAML 파일", labels, key="config_selector")
+    if st.button("불러오기", use_container_width=True):
+        load_yaml_into_session(discovered_configs[st.session_state["config_selector"]])
         st.rerun()
-    st.text_input("저장할 이름", key="preset_name")
-    if preset_cols[1].button("Preset 저장", use_container_width=True):
+
+    st.divider()
+    st.header("Preset 저장")
+    st.text_input("저장 이름", key="preset_name")
+    if st.button("현재 설정 저장", use_container_width=True):
         preset_name = st.session_state["preset_name"].strip()
         if not preset_name:
             st.error("저장할 preset 이름을 입력하세요.")
@@ -200,12 +288,12 @@ def render_sidebar(config_path: Path, preset_paths: dict[str, Path]) -> None:
     st.number_input("검색 기간 (days_back)", min_value=1, max_value=365, key="days_back")
     st.number_input("query별 최대 결과 수", min_value=1, max_value=500, key="max_results_per_query")
     st.text_area("arXiv queries", height=140, key="queries_text")
-    all_categories = sorted(set(CATEGORY_OPTIONS + st.session_state.get("categories", [])))
-    st.multiselect("카테고리", all_categories, key="categories")
+    category_options = sorted(set(CATEGORY_OPTIONS + st.session_state.get("categories", [])))
+    st.multiselect("카테고리", category_options, key="categories")
     st.toggle("Semantic Scholar enrich", key="enable_semanticscholar")
     st.toggle("OpenReview 수집", key="enable_openreview")
-    st.text_area("OpenReview venues", height=100, key="openreview_venues_text")
-    st.text_area("OpenReview keywords", height=80, key="openreview_keywords_text")
+    st.text_area("OpenReview venues", height=90, key="openreview_venues_text")
+    st.text_area("OpenReview keywords", height=90, key="openreview_keywords_text")
     st.toggle("OpenAlex enrich", key="enable_openalex")
 
     st.divider()
@@ -231,63 +319,29 @@ def render_sidebar(config_path: Path, preset_paths: dict[str, Path]) -> None:
         )
 
     st.divider()
-    st.header("LLM 설정")
-    st.toggle("OpenAI summary/evaluator", key="llm_enabled")
-    st.text_input("summary model", key="llm_model_summary")
-    st.text_input("evaluator model", key="llm_model_evaluator")
-    st.number_input("summary_top_n", min_value=1, max_value=50, key="llm_summary_top_n")
-    st.text_input("prompts_path", key="llm_prompts_path")
-    st.text_input("summary_prompt_id", key="llm_summary_prompt_id")
-    st.text_input("evaluator_prompt_id", key="llm_evaluator_prompt_id")
-    st.number_input("max_concurrency", min_value=1, max_value=16, key="llm_max_concurrency")
-    st.number_input("timeout_s", min_value=10, max_value=300, key="llm_timeout_s")
-
-    st.divider()
     st.header("Digest 설정")
     st.number_input("daily_top_k", min_value=1, max_value=100, key="daily_top_k")
-    st.number_input(
-        "weekly_top_k_per_track",
-        min_value=1,
-        max_value=50,
-        key="weekly_top_k_per_track",
-    )
+    st.number_input("weekly_top_k_per_track", min_value=1, max_value=50, key="weekly_top_k_per_track")
     st.text_area("track order", height=120, key="digest_tracks_text")
     st.text_area(
         "custom track_definitions (YAML)",
         height=160,
         key="track_definitions_text",
-        help="예: my_track:\\n  label: My Track\\n  keywords:\\n    - keyword one",
+        help="예시:\nmy_track:\n  label: My Track\n  keywords:\n    - keyword one",
     )
 
 
-def get_default_preset_label(config_path: Path) -> str:
-    if config_path == DEFAULT_CONFIG_PATH.resolve():
-        return "기본 예제"
-    return f"실행 config ({config_path.name})"
-
-
-def get_preset_paths(config_path: Path) -> dict[str, Path]:
-    resolved = config_path.resolve()
-    preset_paths = {get_default_preset_label(resolved): resolved}
-    default_config = DEFAULT_CONFIG_PATH.resolve()
-    if resolved != default_config and default_config.exists():
-        preset_paths["기본 예제"] = default_config
-    if DEFAULT_PRESET_DIR.exists():
-        for path in sorted(DEFAULT_PRESET_DIR.glob("*.yaml")):
-            preset_paths[path.stem] = path.resolve()
-    return preset_paths
-
-
-def load_preset_into_session(path: Path, current_config_path: Path) -> None:
+def load_yaml_into_session(path: Path) -> None:
     config = load_config(path)
-    apply_config_to_session(config, current_config_path)
+    st.session_state["config_source_path"] = str(path.resolve())
     st.session_state["config_template"] = copy.deepcopy(config)
+    reset_session_state_for_config(st.session_state)
+    apply_config_to_session(config)
 
 
-def apply_config_to_session(config: dict[str, Any], config_path: Path) -> None:
+def apply_config_to_session(config: Mapping[str, Any]) -> None:
     fetch_options = build_fetch_options_from_config(config)
     rank_options = build_rank_options_from_config(config)
-    llm_options = build_llm_options_from_config(config, config_path=config_path)
     digest_options = build_digest_options_from_config(config)
     normalized_weights, _, _ = normalize_weight_map(rank_options.weights)
 
@@ -306,15 +360,6 @@ def apply_config_to_session(config: dict[str, Any], config_path: Path) -> None:
         st.session_state[f"weight_{weight_key}"] = float(normalized_weights[weight_key])
     for bucket_key in BUCKET_KEYS:
         st.session_state[f"bucket_{bucket_key}"] = float(rank_options.buckets.get(bucket_key, 0.0))
-    st.session_state["llm_enabled"] = bool(llm_options.enabled)
-    st.session_state["llm_model_summary"] = llm_options.model_summary
-    st.session_state["llm_model_evaluator"] = llm_options.model_evaluator
-    st.session_state["llm_summary_top_n"] = int(llm_options.summary_top_n)
-    st.session_state["llm_prompts_path"] = llm_options.prompts_path or "paper_radar_prompts.example.yaml"
-    st.session_state["llm_summary_prompt_id"] = llm_options.summary_prompt_id
-    st.session_state["llm_evaluator_prompt_id"] = llm_options.evaluator_prompt_id
-    st.session_state["llm_max_concurrency"] = int(llm_options.max_concurrency)
-    st.session_state["llm_timeout_s"] = int(llm_options.timeout_s)
     st.session_state["daily_top_k"] = int(digest_options.daily_top_k)
     st.session_state["weekly_top_k_per_track"] = int(digest_options.weekly_top_k_per_track)
     st.session_state["digest_tracks_text"] = "\n".join(digest_options.tracks)
@@ -323,19 +368,12 @@ def apply_config_to_session(config: dict[str, Any], config_path: Path) -> None:
 
 def build_fetch_options_from_session() -> FetchOptions:
     template = st.session_state["config_template"]
-    semantic_env = (
-        template.get("sources", {})
-        .get("semanticscholar", {})
-        .get("api_key_env", "SEMANTIC_SCHOLAR_API_KEY")
-    )
-    openalex_env = (
-        template.get("sources", {})
-        .get("openalex", {})
-        .get("api_key_env", "OPENALEX_API_KEY")
-    )
+    sources = template.get("sources", {})
+    semantic_env = sources.get("semanticscholar", {}).get("api_key_env", "SEMANTIC_SCHOLAR_API_KEY")
+    openalex_env = sources.get("openalex", {}).get("api_key_env", "OPENALEX_API_KEY")
     return FetchOptions(
         queries=split_multiline_list(st.session_state["queries_text"]),
-        categories=[str(category).strip() for category in st.session_state["categories"] if str(category).strip()],
+        categories=[str(item).strip() for item in st.session_state["categories"] if str(item).strip()],
         days_back=int(st.session_state["days_back"]),
         max_results_per_query=int(st.session_state["max_results_per_query"]),
         enable_semanticscholar=bool(st.session_state["enable_semanticscholar"]),
@@ -360,34 +398,12 @@ def build_rank_options_from_session() -> RankOptions:
     )
 
 
-def build_llm_options_from_session(config_path: Path) -> LLMOptions:
-    template = st.session_state["config_template"]
-    api_key_env = template.get("llm", {}).get("api_key_env", "OPENAI_API_KEY")
-    prompts_path = st.session_state["llm_prompts_path"].strip() or "paper_radar_prompts.example.yaml"
-    resolved_prompts = Path(prompts_path)
-    if not resolved_prompts.is_absolute():
-        resolved_prompts = config_path.resolve().parent / resolved_prompts
-    return LLMOptions(
-        enabled=bool(st.session_state["llm_enabled"]),
-        provider="openai",
-        model_summary=st.session_state["llm_model_summary"].strip() or "gpt-4o-mini",
-        model_evaluator=st.session_state["llm_model_evaluator"].strip() or "gpt-4o-mini",
-        summary_top_n=int(st.session_state["llm_summary_top_n"]),
-        prompts_path=str(resolved_prompts),
-        summary_prompt_id=st.session_state["llm_summary_prompt_id"].strip() or "daily_radar_ko",
-        evaluator_prompt_id=st.session_state["llm_evaluator_prompt_id"].strip() or "evaluator_ko",
-        max_concurrency=int(st.session_state["llm_max_concurrency"]),
-        timeout_s=int(st.session_state["llm_timeout_s"]),
-        api_key_env=str(api_key_env),
-    )
-
-
 def build_digest_options_from_session() -> DigestOptions:
     base = build_digest_options_from_config(st.session_state["config_template"])
     tracks = split_multiline_list(st.session_state["digest_tracks_text"])
     definitions = copy.deepcopy(base.track_definitions)
-    custom_defs = parse_track_definitions_text(st.session_state["track_definitions_text"])
-    for track_id, definition in custom_defs.items():
+    custom_definitions = parse_track_definitions_text(st.session_state["track_definitions_text"])
+    for track_id, definition in custom_definitions.items():
         definitions[str(track_id)] = {
             "label": str(definition.get("label", track_id)),
             "keywords": parse_keywords_input(definition.get("keywords", [])),
@@ -402,9 +418,9 @@ def build_digest_options_from_session() -> DigestOptions:
     )
 
 
-def run_fetch(current_config: dict[str, Any], config_path: Path, current_fetch_signature: str) -> None:
+def run_fetch(current_config: Mapping[str, Any], config_path: Path, current_fetch_signature: str) -> None:
     try:
-        with st.spinner("수집, enrich, ranking, summary/evaluator를 실행하는 중입니다..."):
+        with st.spinner("논문을 수집하고 enrich 및 ranking을 수행하는 중입니다..."):
             execution = execute_pipeline(
                 current_config,
                 config_path=config_path,
@@ -417,12 +433,13 @@ def run_fetch(current_config: dict[str, Any], config_path: Path, current_fetch_s
         st.error(f"Fetch 실행 중 오류가 발생했습니다: {exc}")
         return
 
-    st.session_state["fetched_raw_papers"] = [asdict(paper) for paper in execution.ranked_papers]
+    st.session_state["fetched_raw_papers"] = [asdict(paper) for paper in execution.raw_papers]
     st.session_state["last_fetch_signature"] = current_fetch_signature
     st.session_state["last_fetch_at"] = dt.datetime.now().isoformat()
-    st.session_state["last_fetch_count"] = len(execution.ranked_papers)
+    st.session_state["last_fetch_count"] = len(execution.raw_papers)
     st.session_state["last_run_id"] = execution.run_id
     st.session_state["last_source_status"] = execution.source_status
+    st.session_state["selected_paper_label"] = ""
     if not execution.ranked_papers:
         st.warning("수집된 논문이 없습니다. query, 기간, source 설정을 다시 확인하세요.")
     else:
@@ -439,23 +456,19 @@ def rank_current_session_papers(rank_options: RankOptions, digest_options: Diges
 
 
 def save_current_preset(name: str) -> None:
-    current_config_path = Path(st.session_state["config_source_path"])
     fetch_options = build_fetch_options_from_session()
     rank_options = build_rank_options_from_session()
-    llm_options = build_llm_options_from_session(current_config_path)
     digest_options = build_digest_options_from_session()
     config = build_config_from_options(
         st.session_state["config_template"],
         fetch_options,
         rank_options,
-        llm_options,
         digest_options,
     )
-    safe_name = reformat_preset_name(name)
-    save_config(DEFAULT_PRESET_DIR / f"{safe_name}.yaml", config)
+    save_config(DEFAULT_PRESET_DIR / f"{reformat_preset_name(name)}.yaml", config)
 
 
-def show_top_controls(rank_options: RankOptions, llm_options: LLMOptions, needs_refetch: bool) -> None:
+def show_top_controls(rank_options: RankOptions, needs_refetch: bool) -> None:
     normalized_weights, raw_sum, normalized = normalize_weight_map(rank_options.weights)
     weight_line = ", ".join(f"{key}={value:.3f}" for key, value in normalized_weights.items())
     st.caption(f"현재 weight 합계: {raw_sum:.4f}")
@@ -465,26 +478,20 @@ def show_top_controls(rank_options: RankOptions, llm_options: LLMOptions, needs_
         st.caption(f"정규화된 weights: {weight_line}")
 
     if needs_refetch:
-        st.warning("Fetch 관련 설정이 바뀌었습니다. 현재 표는 이전 fetch 기준이며, 새 fetch를 실행해야 반영됩니다.")
+        st.warning("Fetch 관련 설정이 바뀌었습니다. 현재 표는 이전 fetch 기준이고, 다시 Fetch 해야 반영됩니다.")
     else:
-        st.caption("현재 fetch 설정과 결과가 일치합니다.")
-
-    if llm_options.enabled:
-        st.caption(
-            f"LLM summary/evaluator는 fetch 시점에만 갱신됩니다. 현재 모델: {llm_options.model_summary} / {llm_options.model_evaluator}"
-        )
+        st.caption("현재 fetch 설정과 저장된 snapshot이 일치합니다.")
 
 
 def show_metrics(ranked_papers: list[Paper]) -> None:
     total_count = len(ranked_papers)
     must_read_count = sum(1 for paper in ranked_papers if paper.bucket == "must_read")
     top_score = ranked_papers[0].final_score if ranked_papers else 0.0
-    last_fetch_at = st.session_state.get("last_fetch_at")
     metric_cols = st.columns(5)
     metric_cols[0].metric("총 논문 수", total_count)
     metric_cols[1].metric("Must Read", must_read_count)
     metric_cols[2].metric("최고 점수", f"{top_score:.2f}")
-    metric_cols[3].metric("최근 Fetch", format_fetch_time(last_fetch_at))
+    metric_cols[3].metric("최근 Fetch", format_fetch_time(st.session_state.get("last_fetch_at")))
     metric_cols[4].metric("마지막 run", st.session_state.get("last_run_id") or "-")
 
 
@@ -511,12 +518,10 @@ def render_single_run_tab(ranked_papers: list[Paper], rank_options: RankOptions)
 
 def render_digest_tab(ranked_papers: list[Paper], digest_options: DigestOptions) -> None:
     if not ranked_papers:
-        st.info("먼저 fetch를 실행하면 track digest를 볼 수 있습니다.")
+        st.info("먼저 Fetch를 실행하면 track digest를 볼 수 있습니다.")
         return
 
-    exclude_failed = st.checkbox("검증 실패 논문 제외", value=True)
-    track_digest = build_track_digest(ranked_papers, digest_options, exclude_failed=exclude_failed)
-
+    track_digest = build_track_digest(ranked_papers, digest_options)
     digest_cols = st.columns(2)
     with digest_cols[0]:
         st.subheader("Daily Digest")
@@ -526,20 +531,30 @@ def render_digest_tab(ranked_papers: list[Paper], digest_options: DigestOptions)
         st.markdown(track_digest.weekly_markdown)
 
 
-def render_compare_tab(store: PaperRadarStore, preset_paths: dict[str, Path]) -> None:
-    st.subheader("Preset Compare")
-    labels = list(preset_paths.keys())
+def render_compare_tab(store: PaperRadarStore, config_paths: Mapping[str, Path]) -> None:
+    st.subheader("Config Compare")
+    labels = list(config_paths.keys())
     if len(labels) < 2:
-        st.info("비교하려면 preset이 두 개 이상 필요합니다.")
+        st.info("비교하려면 YAML config가 두 개 이상 필요합니다.")
         return
 
-    compare_cols = st.columns(2)
-    default_b = 1 if len(labels) > 1 else 0
-    label_a = compare_cols[0].selectbox("Preset A", labels, key="compare_preset_a")
-    label_b = compare_cols[1].selectbox("Preset B", labels, index=default_b, key="compare_preset_b")
+    current_path = Path(st.session_state["config_source_path"]).resolve()
+    default_a = label_for_path(config_paths, current_path)
+    default_b = labels[1] if len(labels) > 1 and labels[0] == default_a else labels[0]
+    if default_b == default_a and len(labels) > 1:
+        default_b = labels[1]
 
-    path_a = preset_paths[label_a]
-    path_b = preset_paths[label_b]
+    if st.session_state.get("compare_config_a") not in labels:
+        st.session_state["compare_config_a"] = default_a
+    if st.session_state.get("compare_config_b") not in labels:
+        st.session_state["compare_config_b"] = default_b
+
+    compare_cols = st.columns(2)
+    label_a = compare_cols[0].selectbox("Config A", labels, key="compare_config_a")
+    label_b = compare_cols[1].selectbox("Config B", labels, key="compare_config_b")
+
+    path_a = config_paths[label_a]
+    path_b = config_paths[label_b]
     config_a = load_config(path_a)
     config_b = load_config(path_b)
     hash_a = config_hash(config_a)
@@ -550,35 +565,35 @@ def render_compare_tab(store: PaperRadarStore, preset_paths: dict[str, Path]) ->
     run_label_map_a = {format_run_option(run): run["id"] for run in runs_a} if runs_a else {"latest": None}
     run_label_map_b = {format_run_option(run): run["id"] for run in runs_b} if runs_b else {"latest": None}
     run_cols = st.columns(2)
-    selected_run_a = run_cols[0].selectbox("Run A", list(run_label_map_a.keys()), key="compare_run_a")
-    selected_run_b = run_cols[1].selectbox("Run B", list(run_label_map_b.keys()), key="compare_run_b")
+    run_label_a = run_cols[0].selectbox("Run A", list(run_label_map_a.keys()), key="compare_run_a")
+    run_label_b = run_cols[1].selectbox("Run B", list(run_label_map_b.keys()), key="compare_run_b")
 
-    if st.button("Compare 실행", use_container_width=False):
+    if st.button("비교 실행", use_container_width=False):
         comparison = compare_presets(
             path_a,
             path_b,
             store_path=DEFAULT_DB_PATH,
-            run_a_id=run_label_map_a[selected_run_a],
-            run_b_id=run_label_map_b[selected_run_b],
+            run_a_id=run_label_map_a[run_label_a],
+            run_b_id=run_label_map_b[run_label_b],
         )
         st.session_state["last_comparison"] = comparison
 
     comparison = st.session_state.get("last_comparison")
     if not comparison:
-        st.caption("preset A/B를 선택하고 compare를 실행하세요.")
+        st.caption("Config A/B를 선택하고 비교를 실행하세요.")
         return
 
     if comparison.get("raw_corpus_differs"):
         st.warning("raw corpus differs: fetch signature가 달라서 snapshot 기준 비교를 보여줍니다.")
     else:
-        st.success("same raw corpus: 동일 fetch signature 기준 재랭킹 비교입니다.")
+        st.success("same raw corpus: 같은 fetch signature 기준으로 재랭킹 비교입니다.")
 
-    st.markdown("**Preset Diff**")
+    st.markdown("**Config Diff**")
     st.json(comparison.get("config_diff", {}))
 
     results = comparison.get("results")
     if not results:
-        st.info("비교할 run 데이터가 아직 부족합니다. 각 preset으로 fetch를 한 번씩 실행하세요.")
+        st.info("비교할 run 데이터가 부족합니다. 각 config로 Fetch를 한 번 이상 실행하세요.")
         return
 
     metric_cols = st.columns(3)
@@ -621,14 +636,6 @@ def show_paper_detail(paper: Paper, rank_options: RankOptions) -> None:
             st.markdown(f"- Review signal: `{paper.review_signal:.2f}`")
         st.markdown("**Abstract**")
         st.write(paper.abstract)
-        if paper.summary_ko:
-            st.markdown("**Final Summary**")
-            st.markdown(paper.summary_ko)
-        if paper.evaluator_status:
-            st.markdown(f"**Evaluator verdict:** `{paper.evaluator_status}`")
-        if paper.evaluator_notes:
-            with st.expander("Evaluator notes"):
-                st.json(paper.evaluator_notes)
 
     with detail_cols[1]:
         st.markdown("**점수 분해**")
@@ -649,27 +656,9 @@ def show_paper_detail(paper: Paper, rank_options: RankOptions) -> None:
         st.write(hits)
 
 
-def format_fetch_time(value: str | None) -> str:
-    if not value:
-        return "-"
-    try:
-        timestamp = dt.datetime.fromisoformat(value)
-    except ValueError:
-        return value
-    return timestamp.strftime("%Y-%m-%d %H:%M:%S")
-
-
-def reformat_preset_name(name: str) -> str:
-    sanitized = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in name.strip())
-    sanitized = sanitized.strip("_")
-    return sanitized or "preset"
-
-
 def parse_track_definitions_text(value: str) -> dict[str, Any]:
     text = value.strip()
-    if not text:
-        return {}
-    if runtime_yaml is None:
+    if not text or runtime_yaml is None:
         return {}
     try:
         loaded = runtime_yaml.safe_load(text) or {}
@@ -680,11 +669,11 @@ def parse_track_definitions_text(value: str) -> dict[str, Any]:
 
 def serialize_track_definitions(digest_options: DigestOptions) -> str:
     custom_defs: dict[str, Any] = {}
+    builtin_defs = build_digest_options_from_config({"digest": {"tracks": digest_options.tracks}}).track_definitions
     for track_id, definition in digest_options.track_definitions.items():
         if track_id == TRACK_UNASSIGNED:
             continue
-        builtin = build_digest_options_from_config({"digest": {"tracks": [track_id]}}).track_definitions.get(track_id)
-        if builtin == definition:
+        if builtin_defs.get(track_id) == definition:
             continue
         custom_defs[track_id] = {
             "label": definition.get("label", track_id),
@@ -697,15 +686,30 @@ def serialize_track_definitions(digest_options: DigestOptions) -> str:
     return runtime_yaml.safe_dump(custom_defs, allow_unicode=True, sort_keys=False)
 
 
-def serialize_config(config: dict[str, Any]) -> str:
+def serialize_config(config: Mapping[str, Any]) -> str:
     if runtime_yaml is None:
-        return json.dumps(config, ensure_ascii=False, indent=2)
-    return runtime_yaml.safe_dump(config, allow_unicode=True, sort_keys=False)
+        return json.dumps(dict(config), ensure_ascii=False, indent=2)
+    return runtime_yaml.safe_dump(dict(config), allow_unicode=True, sort_keys=False)
 
 
-def format_run_option(run: dict[str, Any]) -> str:
+def format_fetch_time(value: str | None) -> str:
+    if not value:
+        return "-"
+    try:
+        timestamp = dt.datetime.fromisoformat(value)
+    except ValueError:
+        return value
+    return timestamp.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def reformat_preset_name(name: str) -> str:
+    sanitized = re.sub(r"[^0-9A-Za-z_-]+", "_", name.strip()).strip("_")
+    return sanitized or "preset"
+
+
+def format_run_option(run: Mapping[str, Any]) -> str:
     finished = run.get("finished_at") or run.get("started_at") or "-"
-    return f"#{run['id']} / {run.get('status', '-') } / {finished}"
+    return f"#{run['id']} / {run.get('status', '-')} / {finished}"
 
 
 if __name__ == "__main__":

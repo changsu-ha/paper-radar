@@ -13,7 +13,6 @@ from paper_radar_core import (
     DEFAULT_DB_PATH,
     DigestOptions,
     FetchOptions,
-    LLMOptions,
     Paper,
     PaperRadarStore,
     RankOptions,
@@ -26,19 +25,18 @@ from paper_radar_core import (
     collect_openreview,
     compare_presets,
     config_hash,
+    diff_configs,
     enrich_openalex,
     enrich_papers,
     execute_pipeline,
-    export_results,
     fetch_options_signature,
-    fetch_papers,
     get_config_path,
     load_config,
     normalize_weight_map,
+    paper_from_dict,
     parse_keywords_input,
     rank_papers,
     save_config,
-    summarize_top_papers,
 )
 
 
@@ -133,8 +131,9 @@ class PaperRadarCoreTests(unittest.TestCase):
         self.assertAlmostEqual(raw_sum, 2.0, places=6)
         self.assertTrue(used_normalization)
 
-    def test_preset_roundtrip_preserves_v2_config_shape(self) -> None:
+    def test_preset_roundtrip_preserves_shape_and_strips_llm(self) -> None:
         base_config = load_config("paper_radar_config.example.yaml")
+        base_config["llm"] = {"enabled": True}
         fetch_options = FetchOptions(
             queries=["robot learning", "humanoid"],
             categories=["cs.RO", "cs.AI"],
@@ -153,7 +152,6 @@ class PaperRadarCoreTests(unittest.TestCase):
             buckets={key: float(base_config["ranking"]["buckets"][key]) for key in BUCKET_KEYS},
             daily_top_k=5,
         )
-        llm_options = LLMOptions(enabled=True, summary_top_n=3)
         digest_options = DigestOptions(
             daily_top_k=5,
             weekly_top_k_per_track=2,
@@ -164,7 +162,7 @@ class PaperRadarCoreTests(unittest.TestCase):
                 "unassigned": {"label": "Unassigned", "keywords": []},
             },
         )
-        built = build_config_from_options(base_config, fetch_options, rank_options, llm_options, digest_options)
+        built = build_config_from_options(base_config, fetch_options, rank_options, digest_options)
 
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "preset.yaml"
@@ -174,7 +172,7 @@ class PaperRadarCoreTests(unittest.TestCase):
         self.assertEqual(build_fetch_options_from_config(loaded).queries, fetch_options.queries)
         self.assertEqual(build_fetch_options_from_config(loaded).openreview_venues, fetch_options.openreview_venues)
         self.assertEqual(build_rank_options_from_config(loaded).daily_top_k, 5)
-        self.assertTrue(loaded["llm"]["enabled"])
+        self.assertNotIn("llm", loaded)
         self.assertEqual(loaded["digest"]["tracks"], ["manipulation", "world_model"])
 
     def test_openreview_extracts_metadata_and_review_signal(self) -> None:
@@ -281,70 +279,6 @@ class PaperRadarCoreTests(unittest.TestCase):
         self.assertEqual(enriched[0].doi, "10.1000/openalex")
         self.assertIn("World Models", enriched[0].topics)
 
-    def test_summary_and_evaluator_only_touch_top_n(self) -> None:
-        papers = [
-            make_paper(
-                title="Top Robot Paper",
-                abstract="We propose a robot policy with real robot ablation.",
-                citations=20,
-            ),
-            make_paper(
-                title="Lower Robot Paper",
-                abstract="A smaller benchmark paper.",
-                external_id="test-2",
-            ),
-        ]
-        ranked = rank_papers(assign_tracks(papers, self.digest_options), self.default_rank_options)
-        llm_options = LLMOptions(enabled=True, summary_top_n=1, timeout_s=10)
-
-        summary_response = Mock(status_code=200)
-        summary_response.raise_for_status = Mock()
-        summary_response.json = Mock(
-            return_value={
-                "choices": [
-                    {
-                        "message": {
-                            "content": (
-                                '{"summary":"핵심 요약","why_it_matters":"중요성","method":"방법",'
-                                '"setup_results":"결과","robotics_relevance":"높음",'
-                                '"limitations":"한계","interest_score":90,"recommended_action":"읽기"}'
-                            )
-                        }
-                    }
-                ]
-            }
-        )
-        evaluator_response = Mock(status_code=200)
-        evaluator_response.raise_for_status = Mock()
-        evaluator_response.json = Mock(
-            return_value={
-                "choices": [
-                    {
-                        "message": {
-                            "content": (
-                                '{"verdict":"pass","unsupported_claims":[],"novelty_overclaim":false,'
-                                '"simulation_vs_real_error":false,"baseline_ablation_issue":false,'
-                                '"notes":"ok","revised_summary":""}'
-                            )
-                        }
-                    }
-                ]
-            }
-        )
-
-        with patch("paper_radar_core.requests.post", side_effect=[summary_response, evaluator_response]):
-            summarized = summarize_top_papers(
-                ranked,
-                llm_options,
-                env={"OPENAI_API_KEY": "test-key"},
-            )
-
-        self.assertEqual(summarized[0].summary_status, "complete")
-        self.assertEqual(summarized[0].evaluator_status, "pass")
-        self.assertTrue(summarized[0].summary_ko)
-        self.assertEqual(summarized[1].summary_status, "skipped_top_n")
-        self.assertEqual(summarized[1].evaluator_status, "skipped_top_n")
-
     def test_assign_tracks_and_digest_support_multilabel(self) -> None:
         paper = make_paper(
             title="Dexterous world model manipulation",
@@ -408,8 +342,14 @@ class PaperRadarCoreTests(unittest.TestCase):
             self.default_rank_options,
         )
 
-        papers = rank_papers(assign_tracks([make_paper("Robot policy learning", "Real robot policy study.")], self.digest_options), self.default_rank_options)
-        other_papers = rank_papers(assign_tracks([make_paper("Humanoid control", "Humanoid locomotion paper.", external_id="test-9")], self.digest_options), self.default_rank_options)
+        papers = rank_papers(
+            assign_tracks([make_paper("Robot policy learning", "Real robot policy study.")], self.digest_options),
+            self.default_rank_options,
+        )
+        other_papers = rank_papers(
+            assign_tracks([make_paper("Humanoid control", "Humanoid locomotion paper.", external_id="test-9")], self.digest_options),
+            self.default_rank_options,
+        )
 
         with tempfile.TemporaryDirectory() as tmpdir:
             tmpdir_path = Path(tmpdir)
@@ -447,12 +387,12 @@ class PaperRadarCoreTests(unittest.TestCase):
         self.assertIsNotNone(same_fetch["results"])
         self.assertTrue(different_fetch["raw_corpus_differs"])
 
-    def test_execute_pipeline_persists_sqlite_and_exports(self) -> None:
+    def test_execute_pipeline_ignores_old_llm_config_and_persists_outputs(self) -> None:
         config = load_config("paper_radar_config.example.yaml")
+        config["llm"] = {"enabled": True, "model_summary": "legacy"}
         config["sources"]["semanticscholar"]["enabled"] = False
         config["sources"]["openreview"]["enabled"] = False
         config["sources"]["openalex"]["enabled"] = False
-        config["llm"]["enabled"] = False
 
         now = dt.datetime.now(dt.timezone.utc)
         arxiv_response = Mock(status_code=200, text=build_arxiv_feed([now - dt.timedelta(days=1)]))
@@ -481,6 +421,30 @@ class PaperRadarCoreTests(unittest.TestCase):
             self.assertTrue((out_dir / "papers.jsonl").exists())
             store = PaperRadarStore(db_path)
             self.assertEqual(len(store.load_run_papers(execution.run_id)), 1)
+
+    def test_diff_configs_ignores_llm_only_changes(self) -> None:
+        config_a = load_config("paper_radar_config.example.yaml")
+        config_b = load_config("paper_radar_config.example.yaml")
+        config_a["llm"] = {"enabled": False}
+        config_b["llm"] = {"enabled": True, "model_summary": "legacy"}
+
+        diff = diff_configs(config_a, config_b)
+
+        self.assertNotIn("llm", diff)
+        self.assertEqual(diff["weights"], {})
+        self.assertEqual(diff["buckets"], {})
+
+    def test_old_snapshot_extra_keys_do_not_break_loader(self) -> None:
+        payload = asdict_like(make_paper("Robot paper", "Abstract"))
+        payload["summary_ko"] = "legacy summary"
+        payload["summary_status"] = "complete"
+        payload["evaluator_status"] = "pass"
+        payload["evaluator_notes"] = {"legacy": True}
+
+        paper = paper_from_dict(payload)
+
+        self.assertEqual(paper.title, "Robot paper")
+        self.assertFalse(hasattr(paper, "summary_ko"))
 
     def test_rerank_does_not_hit_network(self) -> None:
         paper = make_paper(
@@ -561,6 +525,44 @@ def make_paper(
         normalized_title=title.lower(),
         source_metadata={"arxiv": {"external_id": external_id}},
     )
+
+
+def asdict_like(paper: Paper) -> dict[str, object]:
+    return {
+        "source": paper.source,
+        "external_id": paper.external_id,
+        "title": paper.title,
+        "abstract": paper.abstract,
+        "authors": list(paper.authors),
+        "published_at": paper.published_at,
+        "updated_at": paper.updated_at,
+        "url": paper.url,
+        "pdf_url": paper.pdf_url,
+        "venue": paper.venue,
+        "categories": list(paper.categories),
+        "doi": paper.doi,
+        "citations": paper.citations,
+        "topics": list(paper.topics),
+        "decision": paper.decision,
+        "review_signal": paper.review_signal,
+        "review_count": paper.review_count,
+        "canonical_id": paper.canonical_id,
+        "track_ids": list(paper.track_ids),
+        "primary_track": paper.primary_track,
+        "track_reasons": dict(paper.track_reasons),
+        "source_metadata": dict(paper.source_metadata),
+        "raw": dict(paper.raw),
+        "normalized_title": paper.normalized_title,
+        "relevance_score": paper.relevance_score,
+        "novelty_score": paper.novelty_score,
+        "empirical_score": paper.empirical_score,
+        "source_signal_score": paper.source_signal_score,
+        "momentum_score": paper.momentum_score,
+        "recency_score": paper.recency_score,
+        "actionability_score": paper.actionability_score,
+        "final_score": paper.final_score,
+        "bucket": paper.bucket,
+    }
 
 
 def build_arxiv_feed(published_dates: list[dt.datetime]) -> str:
