@@ -1,0 +1,112 @@
+project:
+  name: paper-radar-multimodal-foundation-models
+  language: ko
+  timezone: Asia/Seoul
+sources:
+  arxiv:
+    enabled: true
+    categories:
+    - cs.CL
+    - cs.CV
+    - cs.LG
+    - cs.AI
+    queries:
+    - multimodal foundation model OR vision-language model OR audio-language model
+    - cross-modal learning OR multimodal pretraining OR unified model
+    - image-text reasoning OR document understanding OR speech-language
+    - multimodal alignment OR modality fusion OR token unification
+    - video-language model OR omni model OR multimodal reasoning
+    days_back_daily: 10
+    days_back_weekly: 30
+    max_results_per_query: 10
+  openreview:
+    enabled: false
+    venues:
+    - ICLR.cc/2026/Conference
+    - ICML.cc/2026/Conference
+    - NeurIPS.cc/2025/Conference
+    - aistats.org/AISTATS/2026/Conference
+    - auai.org/UAI/2026/Conference
+    keywords:
+    - vision-language models
+    - multimodal pretraining
+    - cross-modal learning
+    - multimodal reasoning
+  semanticscholar:
+    enabled: true
+    api_key_env: SEMANTIC_SCHOLAR_API_KEY
+  openalex:
+    enabled: false
+    api_key_env: OPENALEX_API_KEY
+filters:
+  include_keywords:
+  - multimodal foundation model
+  - vision-language model
+  - audio-language model
+  - cross-modal learning
+  - multimodal pretraining
+  - unified model
+  - image-text reasoning
+  - document understanding
+  - speech-language
+  - multimodal alignment
+  - modality fusion
+  - token unification
+  - video-language model
+  - omni model
+  - multimodal reasoning
+  exclude_keywords:
+  - robot
+  - robotics
+  - humanoid
+  - manipulation
+  - dexterous
+  - teleoperation
+  - sim2real
+  - embodied
+  - vision-language-action
+  - survey
+  - editorial
+  - position paper
+  - tutorial
+  - book chapter
+ranking:
+  weights:
+    relevance: 0.35
+    novelty: 0.22
+    empirical: 0.09
+    source_signal: 0.08
+    momentum: 0.13
+    recency: 0.13
+    actionability: 0.0
+  buckets:
+    must_read: 80
+    worth_reading: 65
+    skim: 50
+digest:
+  daily_top_k: 10
+  weekly_top_k_per_track: 6
+  tracks:
+  - vlm
+  - audio_speech_language
+  - fusion_and_alignment
+  - multimodal_reasoning
+  track_definitions:
+    vlm:
+    - vision-language model
+    - image-text reasoning
+    - video-language model
+    audio_speech_language:
+    - audio-language model
+    - speech-language
+    - omni model
+    fusion_and_alignment:
+    - cross-modal learning
+    - modality fusion
+    - multimodal alignment
+    - token unification
+    multimodal_reasoning:
+    - multimodal reasoning
+    - multimodal pretraining
+    - unified model
+    - document understanding

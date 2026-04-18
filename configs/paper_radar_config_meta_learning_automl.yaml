@@ -1,0 +1,112 @@
+project:
+  name: paper-radar-meta-learning-automl
+  language: ko
+  timezone: Asia/Seoul
+sources:
+  arxiv:
+    enabled: true
+    categories:
+    - cs.LG
+    - stat.ML
+    - cs.AI
+    queries:
+    - meta-learning OR in-context adaptation OR few-shot adaptation
+    - automl OR neural architecture search OR hyperparameter optimization
+    - test-time adaptation OR continual adaptation OR lifelong learning
+    - data selection for adaptation OR task arithmetic OR transfer learning
+    - bayesian optimization OR black-box optimization OR prompt optimization
+    days_back_daily: 10
+    days_back_weekly: 30
+    max_results_per_query: 10
+  openreview:
+    enabled: false
+    venues:
+    - ICLR.cc/2026/Conference
+    - ICML.cc/2026/Conference
+    - NeurIPS.cc/2025/Conference
+    - aistats.org/AISTATS/2026/Conference
+    - auai.org/UAI/2026/Conference
+    keywords:
+    - meta-learning
+    - AutoML
+    - neural architecture search
+    - test-time adaptation
+    - bayesian optimization
+  semanticscholar:
+    enabled: true
+    api_key_env: SEMANTIC_SCHOLAR_API_KEY
+  openalex:
+    enabled: false
+    api_key_env: OPENALEX_API_KEY
+filters:
+  include_keywords:
+  - meta-learning
+  - in-context adaptation
+  - few-shot adaptation
+  - automl
+  - neural architecture search
+  - hyperparameter optimization
+  - test-time adaptation
+  - continual adaptation
+  - lifelong learning
+  - data selection for adaptation
+  - task arithmetic
+  - transfer learning
+  - bayesian optimization
+  - black-box optimization
+  - prompt optimization
+  exclude_keywords:
+  - robot
+  - robotics
+  - humanoid
+  - manipulation
+  - dexterous
+  - teleoperation
+  - sim2real
+  - embodied
+  - vision-language-action
+  - survey
+  - editorial
+  - position paper
+  - tutorial
+  - book chapter
+ranking:
+  weights:
+    relevance: 0.35
+    novelty: 0.22
+    empirical: 0.08
+    source_signal: 0.08
+    momentum: 0.12
+    recency: 0.15
+    actionability: 0.0
+  buckets:
+    must_read: 80
+    worth_reading: 65
+    skim: 50
+digest:
+  daily_top_k: 10
+  weekly_top_k_per_track: 6
+  tracks:
+  - meta_learning
+  - automl_nas
+  - adaptation
+  - bayesian_optimization
+  track_definitions:
+    meta_learning:
+    - meta-learning
+    - few-shot adaptation
+    - in-context adaptation
+    automl_nas:
+    - automl
+    - neural architecture search
+    - hyperparameter optimization
+    adaptation:
+    - test-time adaptation
+    - continual adaptation
+    - lifelong learning
+    - transfer learning
+    - task arithmetic
+    bayesian_optimization:
+    - bayesian optimization
+    - black-box optimization
+    - prompt optimization

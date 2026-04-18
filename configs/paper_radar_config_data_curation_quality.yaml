@@ -1,0 +1,118 @@
+project:
+  name: paper-radar-data-curation-quality
+  language: ko
+  timezone: Asia/Seoul
+sources:
+  arxiv:
+    enabled: true
+    categories:
+    - cs.LG
+    - cs.CL
+    - cs.IR
+    - stat.ML
+    queries:
+    - pretraining data OR data curation OR data filtering OR data selection
+    - synthetic data OR data mixture OR data recipe OR curriculum learning
+    - deduplication OR contamination OR memorization OR data leakage
+    - dataset quality OR data governance OR web-scale corpus OR benchmark contamination
+    - annotation quality OR preference data OR human feedback data
+    days_back_daily: 10
+    days_back_weekly: 30
+    max_results_per_query: 10
+  openreview:
+    enabled: false
+    venues:
+    - ICLR.cc/2026/Conference
+    - ICML.cc/2026/Conference
+    - NeurIPS.cc/2025/Conference
+    - aistats.org/AISTATS/2026/Conference
+    - auai.org/UAI/2026/Conference
+    keywords:
+    - data curation
+    - synthetic data
+    - deduplication
+    - contamination
+    - data quality
+  semanticscholar:
+    enabled: true
+    api_key_env: SEMANTIC_SCHOLAR_API_KEY
+  openalex:
+    enabled: false
+    api_key_env: OPENALEX_API_KEY
+filters:
+  include_keywords:
+  - pretraining data
+  - data curation
+  - data filtering
+  - data selection
+  - synthetic data
+  - data mixture
+  - data recipe
+  - curriculum learning
+  - deduplication
+  - contamination
+  - memorization
+  - data leakage
+  - dataset quality
+  - data governance
+  - web-scale corpus
+  - benchmark contamination
+  - annotation quality
+  - preference data
+  - human feedback data
+  exclude_keywords:
+  - robot
+  - robotics
+  - humanoid
+  - manipulation
+  - dexterous
+  - teleoperation
+  - sim2real
+  - embodied
+  - vision-language-action
+  - survey
+  - editorial
+  - position paper
+  - tutorial
+  - book chapter
+ranking:
+  weights:
+    relevance: 0.37
+    novelty: 0.2
+    empirical: 0.09
+    source_signal: 0.08
+    momentum: 0.11
+    recency: 0.15
+    actionability: 0.0
+  buckets:
+    must_read: 80
+    worth_reading: 65
+    skim: 50
+digest:
+  daily_top_k: 10
+  weekly_top_k_per_track: 6
+  tracks:
+  - data_selection
+  - synthetic_and_mixture
+  - contamination_and_memorization
+  - annotation_and_feedback
+  track_definitions:
+    data_selection:
+    - data curation
+    - data filtering
+    - data selection
+    - data recipe
+    synthetic_and_mixture:
+    - synthetic data
+    - data mixture
+    - curriculum learning
+    contamination_and_memorization:
+    - deduplication
+    - contamination
+    - memorization
+    - data leakage
+    annotation_and_feedback:
+    - annotation quality
+    - preference data
+    - human feedback data
+    - dataset quality

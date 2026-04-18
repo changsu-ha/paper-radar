@@ -1,0 +1,117 @@
+project:
+  name: paper-radar-efficient-ml-systems
+  language: ko
+  timezone: Asia/Seoul
+sources:
+  arxiv:
+    enabled: true
+    categories:
+    - cs.LG
+    - cs.CL
+    - cs.CV
+    - cs.DC
+    queries:
+    - efficient training OR systems for machine learning OR compiler for training
+    - distillation OR pruning OR quantization OR sparsity
+    - mixture-of-experts systems OR distributed training OR parallelism
+    - low-rank adaptation OR parameter-efficient finetuning OR memory efficiency
+    - serving optimization OR inference efficiency OR batching OR cache
+    days_back_daily: 10
+    days_back_weekly: 30
+    max_results_per_query: 10
+  openreview:
+    enabled: false
+    venues:
+    - ICLR.cc/2026/Conference
+    - ICML.cc/2026/Conference
+    - NeurIPS.cc/2025/Conference
+    - aistats.org/AISTATS/2026/Conference
+    - auai.org/UAI/2026/Conference
+    keywords:
+    - efficient training
+    - distillation
+    - quantization
+    - distributed training
+    - parameter-efficient finetuning
+  semanticscholar:
+    enabled: true
+    api_key_env: SEMANTIC_SCHOLAR_API_KEY
+  openalex:
+    enabled: false
+    api_key_env: OPENALEX_API_KEY
+filters:
+  include_keywords:
+  - efficient training
+  - systems for machine learning
+  - compiler for training
+  - distillation
+  - pruning
+  - quantization
+  - sparsity
+  - mixture-of-experts
+  - distributed training
+  - parallelism
+  - low-rank adaptation
+  - parameter-efficient finetuning
+  - memory efficiency
+  - serving optimization
+  - inference efficiency
+  - batching
+  - cache
+  exclude_keywords:
+  - robot
+  - robotics
+  - humanoid
+  - manipulation
+  - dexterous
+  - teleoperation
+  - sim2real
+  - embodied
+  - vision-language-action
+  - survey
+  - editorial
+  - position paper
+  - tutorial
+  - book chapter
+ranking:
+  weights:
+    relevance: 0.34
+    novelty: 0.2
+    empirical: 0.13
+    source_signal: 0.08
+    momentum: 0.12
+    recency: 0.13
+    actionability: 0.0
+  buckets:
+    must_read: 80
+    worth_reading: 65
+    skim: 50
+digest:
+  daily_top_k: 10
+  weekly_top_k_per_track: 6
+  tracks:
+  - compression
+  - distributed_training
+  - parameter_efficient_tuning
+  - serving_and_inference
+  track_definitions:
+    compression:
+    - distillation
+    - pruning
+    - quantization
+    - sparsity
+    distributed_training:
+    - distributed training
+    - parallelism
+    - mixture-of-experts
+    - efficient training
+    parameter_efficient_tuning:
+    - low-rank adaptation
+    - parameter-efficient finetuning
+    - memory efficiency
+    serving_and_inference:
+    - serving optimization
+    - inference efficiency
+    - batching
+    - cache
+    - compiler for training

@@ -1,0 +1,119 @@
+project:
+  name: paper-radar-llm-posttraining-alignment
+  language: ko
+  timezone: Asia/Seoul
+sources:
+  arxiv:
+    enabled: true
+    categories:
+    - cs.CL
+    - cs.LG
+    - cs.AI
+    - cs.IR
+    queries:
+    - post-training OR instruction tuning OR supervised fine-tuning
+    - alignment OR reward model OR preference optimization OR DPO OR RLHF
+    - constitutional AI OR self-refinement OR critique OR verifier
+    - reasoning finetuning OR process supervision OR outcome supervision
+    - tool use OR function calling OR agent training OR model spec
+    days_back_daily: 10
+    days_back_weekly: 30
+    max_results_per_query: 10
+  openreview:
+    enabled: false
+    venues:
+    - ICLR.cc/2026/Conference
+    - ICML.cc/2026/Conference
+    - NeurIPS.cc/2025/Conference
+    - aistats.org/AISTATS/2026/Conference
+    - auai.org/UAI/2026/Conference
+    keywords:
+    - alignment
+    - reward models
+    - preference optimization
+    - instruction tuning
+    - verifiers
+  semanticscholar:
+    enabled: true
+    api_key_env: SEMANTIC_SCHOLAR_API_KEY
+  openalex:
+    enabled: false
+    api_key_env: OPENALEX_API_KEY
+filters:
+  include_keywords:
+  - post-training
+  - instruction tuning
+  - supervised fine-tuning
+  - alignment
+  - reward model
+  - preference optimization
+  - dpo
+  - rlhf
+  - constitutional ai
+  - self-refinement
+  - critique
+  - verifier
+  - reasoning finetuning
+  - process supervision
+  - outcome supervision
+  - tool use
+  - function calling
+  - agent training
+  - model spec
+  exclude_keywords:
+  - robot
+  - robotics
+  - humanoid
+  - manipulation
+  - dexterous
+  - teleoperation
+  - sim2real
+  - embodied
+  - vision-language-action
+  - survey
+  - editorial
+  - position paper
+  - tutorial
+  - book chapter
+ranking:
+  weights:
+    relevance: 0.35
+    novelty: 0.22
+    empirical: 0.09
+    source_signal: 0.08
+    momentum: 0.13
+    recency: 0.13
+    actionability: 0.0
+  buckets:
+    must_read: 80
+    worth_reading: 65
+    skim: 50
+digest:
+  daily_top_k: 10
+  weekly_top_k_per_track: 6
+  tracks:
+  - preference_learning
+  - supervision_design
+  - verifiers_and_critique
+  - tool_and_agent_training
+  track_definitions:
+    preference_learning:
+    - reward model
+    - preference optimization
+    - dpo
+    - rlhf
+    supervision_design:
+    - instruction tuning
+    - supervised fine-tuning
+    - process supervision
+    - outcome supervision
+    verifiers_and_critique:
+    - verifier
+    - critique
+    - self-refinement
+    - constitutional ai
+    tool_and_agent_training:
+    - tool use
+    - function calling
+    - agent training
+    - model spec

@@ -1,0 +1,113 @@
+project:
+  name: paper-radar-reinforcement-learning
+  language: ko
+  timezone: Asia/Seoul
+sources:
+  arxiv:
+    enabled: true
+    categories:
+    - cs.LG
+    - stat.ML
+    - cs.AI
+    - math.OC
+    queries:
+    - reinforcement learning OR policy optimization OR actor critic
+    - offline RL OR batch RL OR imitation learning theory
+    - bandit OR exploration OR regret minimization
+    - model-based RL OR world model OR planning
+    - reward learning OR preference-based RL OR decision transformer
+    days_back_daily: 10
+    days_back_weekly: 30
+    max_results_per_query: 10
+  openreview:
+    enabled: false
+    venues:
+    - ICLR.cc/2026/Conference
+    - ICML.cc/2026/Conference
+    - NeurIPS.cc/2025/Conference
+    - aistats.org/AISTATS/2026/Conference
+    - auai.org/UAI/2026/Conference
+    keywords:
+    - reinforcement learning
+    - offline RL
+    - bandits
+    - model-based RL
+    - reward learning
+  semanticscholar:
+    enabled: true
+    api_key_env: SEMANTIC_SCHOLAR_API_KEY
+  openalex:
+    enabled: false
+    api_key_env: OPENALEX_API_KEY
+filters:
+  include_keywords:
+  - reinforcement learning
+  - policy optimization
+  - actor critic
+  - offline rl
+  - batch rl
+  - imitation learning theory
+  - bandit
+  - exploration
+  - regret minimization
+  - model-based rl
+  - world model
+  - planning
+  - reward learning
+  - preference-based rl
+  - decision transformer
+  exclude_keywords:
+  - robot
+  - robotics
+  - humanoid
+  - manipulation
+  - dexterous
+  - teleoperation
+  - sim2real
+  - embodied
+  - vision-language-action
+  - survey
+  - editorial
+  - position paper
+  - tutorial
+  - book chapter
+ranking:
+  weights:
+    relevance: 0.34
+    novelty: 0.21
+    empirical: 0.12
+    source_signal: 0.08
+    momentum: 0.12
+    recency: 0.13
+    actionability: 0.0
+  buckets:
+    must_read: 80
+    worth_reading: 65
+    skim: 50
+digest:
+  daily_top_k: 10
+  weekly_top_k_per_track: 6
+  tracks:
+  - policy_optimization
+  - offline_rl
+  - bandits
+  - model_based_rl
+  track_definitions:
+    policy_optimization:
+    - reinforcement learning
+    - policy optimization
+    - actor critic
+    offline_rl:
+    - offline rl
+    - batch rl
+    - decision transformer
+    - imitation learning theory
+    bandits:
+    - bandit
+    - exploration
+    - regret minimization
+    model_based_rl:
+    - model-based rl
+    - world model
+    - planning
+    - reward learning

@@ -1,0 +1,111 @@
+project:
+  name: paper-radar-probabilistic-causal
+  language: ko
+  timezone: Asia/Seoul
+sources:
+  arxiv:
+    enabled: true
+    categories:
+    - stat.ML
+    - math.ST
+    - cs.LG
+    - cs.AI
+    queries:
+    - causal learning OR causal discovery OR counterfactual
+    - bayesian inference OR posterior approximation OR probabilistic model
+    - uncertainty estimation OR calibration OR conformal prediction
+    - latent variable model OR graphical model OR variational inference
+    - decision theory OR active learning OR experimental design
+    days_back_daily: 10
+    days_back_weekly: 30
+    max_results_per_query: 10
+  openreview:
+    enabled: false
+    venues:
+    - ICLR.cc/2026/Conference
+    - ICML.cc/2026/Conference
+    - NeurIPS.cc/2025/Conference
+    - aistats.org/AISTATS/2026/Conference
+    - auai.org/UAI/2026/Conference
+    keywords:
+    - causal learning
+    - bayesian inference
+    - uncertainty estimation
+    - conformal prediction
+  semanticscholar:
+    enabled: true
+    api_key_env: SEMANTIC_SCHOLAR_API_KEY
+  openalex:
+    enabled: false
+    api_key_env: OPENALEX_API_KEY
+filters:
+  include_keywords:
+  - causal learning
+  - causal discovery
+  - counterfactual
+  - bayesian inference
+  - posterior approximation
+  - probabilistic model
+  - uncertainty estimation
+  - calibration
+  - conformal prediction
+  - latent variable model
+  - graphical model
+  - variational inference
+  - decision theory
+  - active learning
+  - experimental design
+  exclude_keywords:
+  - robot
+  - robotics
+  - humanoid
+  - manipulation
+  - dexterous
+  - teleoperation
+  - sim2real
+  - embodied
+  - vision-language-action
+  - survey
+  - editorial
+  - position paper
+  - tutorial
+  - book chapter
+ranking:
+  weights:
+    relevance: 0.36
+    novelty: 0.22
+    empirical: 0.06
+    source_signal: 0.08
+    momentum: 0.11
+    recency: 0.17
+    actionability: 0.0
+  buckets:
+    must_read: 80
+    worth_reading: 65
+    skim: 50
+digest:
+  daily_top_k: 10
+  weekly_top_k_per_track: 6
+  tracks:
+  - causal_discovery
+  - bayesian_inference
+  - uncertainty_and_calibration
+  - graphical_and_latent_models
+  track_definitions:
+    causal_discovery:
+    - causal learning
+    - causal discovery
+    - counterfactual
+    bayesian_inference:
+    - bayesian inference
+    - posterior approximation
+    - decision theory
+    uncertainty_and_calibration:
+    - uncertainty estimation
+    - calibration
+    - conformal prediction
+    graphical_and_latent_models:
+    - graphical model
+    - latent variable model
+    - variational inference
+    - experimental design

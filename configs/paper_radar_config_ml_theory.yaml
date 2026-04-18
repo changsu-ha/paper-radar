@@ -1,0 +1,122 @@
+project:
+  name: paper-radar-ml-theory
+  language: ko
+  timezone: Asia/Seoul
+sources:
+  arxiv:
+    enabled: true
+    categories:
+    - cs.LG
+    - stat.ML
+    - math.ST
+    - math.OC
+    queries:
+    - generalization OR sample complexity OR excess risk OR minimax
+    - PAC-Bayes OR Rademacher complexity OR stability OR sharpness
+    - optimization theory OR convergence rate OR stochastic approximation OR implicit
+      bias
+    - in-context learning theory OR transformer theory OR scaling law theory
+    - double descent OR grokking OR feature learning theory OR neural tangent
+    days_back_daily: 10
+    days_back_weekly: 30
+    max_results_per_query: 10
+  openreview:
+    enabled: false
+    venues:
+    - ICLR.cc/2026/Conference
+    - ICML.cc/2026/Conference
+    - NeurIPS.cc/2025/Conference
+    - aistats.org/AISTATS/2026/Conference
+    - auai.org/UAI/2026/Conference
+    keywords:
+    - machine learning theory
+    - generalization
+    - sample complexity
+    - optimization theory
+  semanticscholar:
+    enabled: true
+    api_key_env: SEMANTIC_SCHOLAR_API_KEY
+  openalex:
+    enabled: false
+    api_key_env: OPENALEX_API_KEY
+filters:
+  include_keywords:
+  - generalization
+  - sample complexity
+  - excess risk
+  - minimax
+  - pac-bayes
+  - rademacher
+  - stability
+  - uniform convergence
+  - optimization theory
+  - convergence
+  - stochastic approximation
+  - implicit bias
+  - sharpness
+  - in-context learning theory
+  - transformer theory
+  - scaling law
+  - double descent
+  - grokking
+  - neural tangent
+  - kernel regime
+  - representation collapse
+  - feature learning theory
+  exclude_keywords:
+  - robot
+  - robotics
+  - humanoid
+  - manipulation
+  - dexterous
+  - teleoperation
+  - sim2real
+  - embodied
+  - vision-language-action
+  - survey
+  - editorial
+  - position paper
+  - tutorial
+  - book chapter
+ranking:
+  weights:
+    relevance: 0.38
+    novelty: 0.24
+    empirical: 0.03
+    source_signal: 0.08
+    momentum: 0.1
+    recency: 0.17
+    actionability: 0.0
+  buckets:
+    must_read: 80
+    worth_reading: 65
+    skim: 50
+digest:
+  daily_top_k: 10
+  weekly_top_k_per_track: 6
+  tracks:
+  - generalization
+  - optimization_theory
+  - transformer_theory
+  - statistical_learning
+  track_definitions:
+    generalization:
+    - generalization
+    - excess risk
+    - uniform convergence
+    - stability
+    optimization_theory:
+    - optimization theory
+    - convergence
+    - implicit bias
+    - sharpness
+    transformer_theory:
+    - transformer theory
+    - in-context learning theory
+    - scaling law
+    - grokking
+    statistical_learning:
+    - sample complexity
+    - minimax
+    - pac-bayes
+    - rademacher

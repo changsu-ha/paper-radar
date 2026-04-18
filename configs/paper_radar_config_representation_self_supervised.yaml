@@ -1,0 +1,114 @@
+project:
+  name: paper-radar-representation-self-supervised
+  language: ko
+  timezone: Asia/Seoul
+sources:
+  arxiv:
+    enabled: true
+    categories:
+    - cs.LG
+    - stat.ML
+    - cs.CL
+    - cs.CV
+    - cs.NE
+    queries:
+    - representation learning OR self-supervised OR self-supervision
+    - contrastive learning OR masked modeling OR predictive coding
+    - embedding model OR metric learning OR retrieval representation
+    - disentanglement OR invariance OR equivariance OR subspace
+    - world model representation OR latent dynamics OR abstract representation
+    days_back_daily: 10
+    days_back_weekly: 30
+    max_results_per_query: 10
+  openreview:
+    enabled: false
+    venues:
+    - ICLR.cc/2026/Conference
+    - ICML.cc/2026/Conference
+    - NeurIPS.cc/2025/Conference
+    - aistats.org/AISTATS/2026/Conference
+    - auai.org/UAI/2026/Conference
+    keywords:
+    - representation learning
+    - self-supervised learning
+    - contrastive learning
+    - embedding models
+  semanticscholar:
+    enabled: true
+    api_key_env: SEMANTIC_SCHOLAR_API_KEY
+  openalex:
+    enabled: false
+    api_key_env: OPENALEX_API_KEY
+filters:
+  include_keywords:
+  - representation learning
+  - self-supervised
+  - self-supervision
+  - contrastive learning
+  - masked modeling
+  - predictive coding
+  - embedding model
+  - metric learning
+  - retrieval representation
+  - disentanglement
+  - invariance
+  - equivariance
+  - latent representation
+  - world model
+  - latent dynamics
+  - abstract representation
+  - feature learning
+  exclude_keywords:
+  - robot
+  - robotics
+  - humanoid
+  - manipulation
+  - dexterous
+  - teleoperation
+  - sim2real
+  - embodied
+  - vision-language-action
+  - survey
+  - editorial
+  - position paper
+  - tutorial
+  - book chapter
+ranking:
+  weights:
+    relevance: 0.35
+    novelty: 0.22
+    empirical: 0.09
+    source_signal: 0.08
+    momentum: 0.12
+    recency: 0.14
+    actionability: 0.0
+  buckets:
+    must_read: 80
+    worth_reading: 65
+    skim: 50
+digest:
+  daily_top_k: 10
+  weekly_top_k_per_track: 6
+  tracks:
+  - contrastive
+  - masked_modeling
+  - embedding_models
+  - latent_world_models
+  track_definitions:
+    contrastive:
+    - contrastive learning
+    - metric learning
+    - invariance
+    - equivariance
+    masked_modeling:
+    - masked modeling
+    - self-supervised
+    - predictive coding
+    embedding_models:
+    - embedding model
+    - retrieval representation
+    - feature learning
+    latent_world_models:
+    - world model
+    - latent dynamics
+    - abstract representation

@@ -10,3 +10,4 @@ data/*.sqlite3
 data/gui_presets/
 
 paper_radar_harness_bundle.zip
+streamlit.log

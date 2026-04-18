@@ -1,0 +1,118 @@
+project:
+  name: paper-radar-reasoning-in-context
+  language: ko
+  timezone: Asia/Seoul
+sources:
+  arxiv:
+    enabled: true
+    categories:
+    - cs.CL
+    - cs.LG
+    - cs.AI
+    - cs.IR
+    queries:
+    - in-context learning OR few-shot learning OR prompt optimization
+    - reasoning OR chain-of-thought OR latent reasoning OR self-consistency
+    - verifier OR search OR planning OR test-time compute
+    - tool use OR retrieval-augmented reasoning OR external memory
+    - deliberation OR self-correction OR reflection OR decomposition
+    days_back_daily: 10
+    days_back_weekly: 30
+    max_results_per_query: 10
+  openreview:
+    enabled: false
+    venues:
+    - ICLR.cc/2026/Conference
+    - ICML.cc/2026/Conference
+    - NeurIPS.cc/2025/Conference
+    - aistats.org/AISTATS/2026/Conference
+    - auai.org/UAI/2026/Conference
+    keywords:
+    - in-context learning
+    - reasoning
+    - chain-of-thought
+    - verifiers
+    - test-time compute
+  semanticscholar:
+    enabled: true
+    api_key_env: SEMANTIC_SCHOLAR_API_KEY
+  openalex:
+    enabled: false
+    api_key_env: OPENALEX_API_KEY
+filters:
+  include_keywords:
+  - in-context learning
+  - few-shot learning
+  - prompt optimization
+  - reasoning
+  - chain-of-thought
+  - latent reasoning
+  - self-consistency
+  - verifier
+  - search
+  - planning
+  - test-time compute
+  - tool use
+  - retrieval-augmented reasoning
+  - external memory
+  - deliberation
+  - self-correction
+  - reflection
+  - decomposition
+  exclude_keywords:
+  - robot
+  - robotics
+  - humanoid
+  - manipulation
+  - dexterous
+  - teleoperation
+  - sim2real
+  - embodied
+  - vision-language-action
+  - survey
+  - editorial
+  - position paper
+  - tutorial
+  - book chapter
+ranking:
+  weights:
+    relevance: 0.35
+    novelty: 0.22
+    empirical: 0.08
+    source_signal: 0.08
+    momentum: 0.13
+    recency: 0.14
+    actionability: 0.0
+  buckets:
+    must_read: 80
+    worth_reading: 65
+    skim: 50
+digest:
+  daily_top_k: 10
+  weekly_top_k_per_track: 6
+  tracks:
+  - icl_and_prompting
+  - reasoning_scaling
+  - verifiers_and_search
+  - reflection_and_decomposition
+  track_definitions:
+    icl_and_prompting:
+    - in-context learning
+    - few-shot learning
+    - prompt optimization
+    reasoning_scaling:
+    - reasoning
+    - chain-of-thought
+    - latent reasoning
+    - test-time compute
+    verifiers_and_search:
+    - verifier
+    - search
+    - planning
+    - tool use
+    - retrieval-augmented reasoning
+    reflection_and_decomposition:
+    - self-correction
+    - reflection
+    - decomposition
+    - self-consistency

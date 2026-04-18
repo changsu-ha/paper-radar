@@ -1,0 +1,116 @@
+project:
+  name: paper-radar-llm-foundations-pretraining
+  language: ko
+  timezone: Asia/Seoul
+sources:
+  arxiv:
+    enabled: true
+    categories:
+    - cs.CL
+    - cs.LG
+    - cs.AI
+    - cs.IR
+    queries:
+    - large language model OR llm OR language model foundation
+    - pretraining OR scaling law OR transformer architecture OR mixture-of-experts
+    - tokenization OR context length OR long-context OR retrieval-augmented pretraining
+    - in-context learning OR emergent ability OR model editing
+    - multilingual pretraining OR code pretraining OR domain-adaptive pretraining
+    days_back_daily: 10
+    days_back_weekly: 30
+    max_results_per_query: 10
+  openreview:
+    enabled: false
+    venues:
+    - ICLR.cc/2026/Conference
+    - ICML.cc/2026/Conference
+    - NeurIPS.cc/2025/Conference
+    - aistats.org/AISTATS/2026/Conference
+    - auai.org/UAI/2026/Conference
+    keywords:
+    - large language models
+    - pretraining
+    - transformer
+    - scaling laws
+    - in-context learning
+  semanticscholar:
+    enabled: true
+    api_key_env: SEMANTIC_SCHOLAR_API_KEY
+  openalex:
+    enabled: false
+    api_key_env: OPENALEX_API_KEY
+filters:
+  include_keywords:
+  - large language model
+  - llm
+  - language model
+  - foundation model
+  - transformer
+  - pretraining
+  - scaling law
+  - mixture-of-experts
+  - tokenization
+  - context length
+  - long-context
+  - retrieval-augmented pretraining
+  - in-context learning
+  - emergent ability
+  - model editing
+  - multilingual pretraining
+  - code pretraining
+  - domain-adaptive pretraining
+  exclude_keywords:
+  - robot
+  - robotics
+  - humanoid
+  - manipulation
+  - dexterous
+  - teleoperation
+  - sim2real
+  - embodied
+  - vision-language-action
+  - survey
+  - editorial
+  - position paper
+  - tutorial
+  - book chapter
+ranking:
+  weights:
+    relevance: 0.35
+    novelty: 0.21
+    empirical: 0.08
+    source_signal: 0.08
+    momentum: 0.14
+    recency: 0.14
+    actionability: 0.0
+  buckets:
+    must_read: 80
+    worth_reading: 65
+    skim: 50
+digest:
+  daily_top_k: 10
+  weekly_top_k_per_track: 6
+  tracks:
+  - architecture_and_scaling
+  - context_and_tokenization
+  - in_context_learning
+  - multilingual_and_code
+  track_definitions:
+    architecture_and_scaling:
+    - transformer
+    - pretraining
+    - scaling law
+    - mixture-of-experts
+    context_and_tokenization:
+    - tokenization
+    - context length
+    - long-context
+    - retrieval-augmented pretraining
+    in_context_learning:
+    - in-context learning
+    - emergent ability
+    - model editing
+    multilingual_and_code:
+    - multilingual pretraining
+    - code pretraining
+    - domain-adaptive pretraining

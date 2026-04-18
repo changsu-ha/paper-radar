@@ -1,0 +1,243 @@
+project:
+  name: paper-radar-broad-ml
+  language: ko
+  timezone: Asia/Seoul
+sources:
+  arxiv:
+    enabled: true
+    categories:
+    - cs.LG
+    - stat.ML
+    - cs.CL
+    - cs.AI
+    - cs.CV
+    - cs.IR
+    - cs.NE
+    - math.OC
+    - math.ST
+    queries:
+    - generalization OR optimization OR convergence OR sample complexity OR PAC-Bayes
+    - representation learning OR self-supervised OR contrastive OR masked modeling
+    - diffusion OR flow matching OR autoregressive OR generative model OR generative
+      modeling
+    - large language model OR llm OR transformer OR pretraining OR scaling law
+    - instruction tuning OR post-training OR preference optimization OR alignment
+      OR reward model
+    - pretraining data OR data curation OR data filtering OR synthetic data OR data
+      mixture
+    - in-context learning OR reasoning OR chain-of-thought OR verifier OR search
+    - mechanistic interpretability OR circuit OR sparse autoencoder OR feature attribution
+    - causal learning OR probabilistic modeling OR bayesian inference OR uncertainty
+    - reinforcement learning OR offline RL OR policy optimization OR bandit
+    - robustness OR privacy OR fairness OR calibration OR distribution shift
+    - efficient training OR distillation OR quantization OR pruning OR low-rank adaptation
+    - vision-language model OR multimodal foundation model OR cross-modal learning
+    days_back_daily: 10
+    days_back_weekly: 30
+    max_results_per_query: 8
+  openreview:
+    enabled: false
+    venues:
+    - ICLR.cc/2026/Conference
+    - ICML.cc/2026/Conference
+    - NeurIPS.cc/2025/Conference
+    - aistats.org/AISTATS/2026/Conference
+    - auai.org/UAI/2026/Conference
+    keywords:
+    - machine learning theory
+    - large language models
+    - representation learning
+    - data curation
+    - alignment
+    - causal learning
+  semanticscholar:
+    enabled: true
+    api_key_env: SEMANTIC_SCHOLAR_API_KEY
+  openalex:
+    enabled: false
+    api_key_env: OPENALEX_API_KEY
+filters:
+  include_keywords:
+  - machine learning
+  - learning theory
+  - generalization
+  - optimization
+  - convergence
+  - sample complexity
+  - pac-bayes
+  - representation learning
+  - self-supervised
+  - contrastive
+  - masked modeling
+  - embedding
+  - diffusion
+  - flow matching
+  - autoregressive
+  - generative model
+  - energy-based model
+  - large language model
+  - llm
+  - language model
+  - transformer
+  - pretraining
+  - post-training
+  - instruction tuning
+  - alignment
+  - reward model
+  - preference optimization
+  - rlhf
+  - dpo
+  - verifier
+  - in-context learning
+  - reasoning
+  - chain-of-thought
+  - test-time compute
+  - data curation
+  - data filtering
+  - data quality
+  - synthetic data
+  - data mixture
+  - deduplication
+  - contamination
+  - mechanistic interpretability
+  - sparse autoencoder
+  - circuit
+  - attribution
+  - causal
+  - bayesian
+  - probabilistic
+  - uncertainty
+  - reinforcement learning
+  - offline rl
+  - bandit
+  - robustness
+  - privacy
+  - fairness
+  - calibration
+  - distillation
+  - quantization
+  - pruning
+  - efficient training
+  - multimodal
+  - vision-language
+  - cross-modal
+  exclude_keywords:
+  - robot
+  - robotics
+  - humanoid
+  - manipulation
+  - dexterous
+  - teleoperation
+  - sim2real
+  - embodied
+  - vision-language-action
+  - survey
+  - editorial
+  - position paper
+  - tutorial
+  - book chapter
+ranking:
+  weights:
+    relevance: 0.34
+    novelty: 0.22
+    empirical: 0.08
+    source_signal: 0.08
+    momentum: 0.13
+    recency: 0.15
+    actionability: 0.0
+  buckets:
+    must_read: 80
+    worth_reading: 65
+    skim: 50
+digest:
+  daily_top_k: 14
+  weekly_top_k_per_track: 8
+  tracks:
+  - ml_theory
+  - optimization
+  - representation
+  - generative
+  - llm_foundations
+  - alignment
+  - data
+  - reasoning
+  - interpretability
+  - probabilistic_causal
+  - reinforcement_learning
+  - trustworthy_ml
+  - efficient_ml
+  - multimodal
+  track_definitions:
+    ml_theory:
+    - generalization
+    - sample complexity
+    - pac-bayes
+    - convergence
+    optimization:
+    - optimization
+    - optimizer
+    - training dynamics
+    - implicit bias
+    representation:
+    - representation learning
+    - self-supervised
+    - contrastive
+    - masked modeling
+    generative:
+    - diffusion
+    - flow matching
+    - autoregressive
+    - generative model
+    llm_foundations:
+    - large language model
+    - transformer
+    - pretraining
+    - scaling law
+    alignment:
+    - alignment
+    - reward model
+    - preference optimization
+    - rlhf
+    - dpo
+    data:
+    - data curation
+    - synthetic data
+    - data quality
+    - deduplication
+    reasoning:
+    - in-context learning
+    - reasoning
+    - chain-of-thought
+    - verifier
+    interpretability:
+    - mechanistic interpretability
+    - sparse autoencoder
+    - circuit
+    - attribution
+    probabilistic_causal:
+    - causal
+    - bayesian
+    - probabilistic
+    - uncertainty
+    reinforcement_learning:
+    - reinforcement learning
+    - offline rl
+    - bandit
+    - policy optimization
+    trustworthy_ml:
+    - robustness
+    - privacy
+    - fairness
+    - calibration
+    - distribution shift
+    efficient_ml:
+    - distillation
+    - quantization
+    - pruning
+    - efficient training
+    - low-rank
+    multimodal:
+    - multimodal
+    - vision-language
+    - cross-modal
+    - vision-language model

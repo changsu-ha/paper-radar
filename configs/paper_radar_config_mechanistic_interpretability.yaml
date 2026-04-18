@@ -1,0 +1,113 @@
+project:
+  name: paper-radar-mechanistic-interpretability
+  language: ko
+  timezone: Asia/Seoul
+sources:
+  arxiv:
+    enabled: true
+    categories:
+    - cs.CL
+    - cs.LG
+    - cs.AI
+    - cs.NE
+    queries:
+    - mechanistic interpretability OR circuit analysis OR feature attribution
+    - sparse autoencoder OR dictionary learning OR superposition
+    - activation steering OR model editing OR representation editing
+    - probing OR causal tracing OR intervention OR internal representation
+    - reasoning trace OR latent feature OR monosemanticity
+    days_back_daily: 10
+    days_back_weekly: 30
+    max_results_per_query: 10
+  openreview:
+    enabled: false
+    venues:
+    - ICLR.cc/2026/Conference
+    - ICML.cc/2026/Conference
+    - NeurIPS.cc/2025/Conference
+    - aistats.org/AISTATS/2026/Conference
+    - auai.org/UAI/2026/Conference
+    keywords:
+    - mechanistic interpretability
+    - sparse autoencoders
+    - circuit analysis
+    - activation steering
+  semanticscholar:
+    enabled: true
+    api_key_env: SEMANTIC_SCHOLAR_API_KEY
+  openalex:
+    enabled: false
+    api_key_env: OPENALEX_API_KEY
+filters:
+  include_keywords:
+  - mechanistic interpretability
+  - circuit analysis
+  - feature attribution
+  - sparse autoencoder
+  - dictionary learning
+  - superposition
+  - activation steering
+  - model editing
+  - representation editing
+  - probing
+  - causal tracing
+  - intervention
+  - internal representation
+  - reasoning trace
+  - latent feature
+  - monosemanticity
+  exclude_keywords:
+  - robot
+  - robotics
+  - humanoid
+  - manipulation
+  - dexterous
+  - teleoperation
+  - sim2real
+  - embodied
+  - vision-language-action
+  - survey
+  - editorial
+  - position paper
+  - tutorial
+  - book chapter
+ranking:
+  weights:
+    relevance: 0.37
+    novelty: 0.22
+    empirical: 0.05
+    source_signal: 0.08
+    momentum: 0.12
+    recency: 0.16
+    actionability: 0.0
+  buckets:
+    must_read: 80
+    worth_reading: 65
+    skim: 50
+digest:
+  daily_top_k: 10
+  weekly_top_k_per_track: 6
+  tracks:
+  - sparse_features
+  - circuit_analysis
+  - steering_and_editing
+  - causal_probing
+  track_definitions:
+    sparse_features:
+    - sparse autoencoder
+    - dictionary learning
+    - superposition
+    - monosemanticity
+    circuit_analysis:
+    - mechanistic interpretability
+    - circuit analysis
+    - latent feature
+    steering_and_editing:
+    - activation steering
+    - model editing
+    - representation editing
+    causal_probing:
+    - probing
+    - causal tracing
+    - intervention
+    - internal representation

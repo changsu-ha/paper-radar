@@ -1,0 +1,117 @@
+project:
+  name: paper-radar-trustworthy-robust-ml
+  language: ko
+  timezone: Asia/Seoul
+sources:
+  arxiv:
+    enabled: true
+    categories:
+    - cs.LG
+    - stat.ML
+    - cs.AI
+    - cs.CL
+    queries:
+    - robustness OR adversarial OR out-of-distribution OR distribution shift
+    - privacy OR differential privacy OR federated learning privacy
+    - fairness OR bias mitigation OR responsible AI
+    - calibration OR uncertainty OR selective prediction
+    - safety evaluation OR jailbreak OR hallucination OR red teaming
+    days_back_daily: 10
+    days_back_weekly: 30
+    max_results_per_query: 10
+  openreview:
+    enabled: false
+    venues:
+    - ICLR.cc/2026/Conference
+    - ICML.cc/2026/Conference
+    - NeurIPS.cc/2025/Conference
+    - aistats.org/AISTATS/2026/Conference
+    - auai.org/UAI/2026/Conference
+    keywords:
+    - robustness
+    - privacy
+    - fairness
+    - calibration
+    - safety evaluation
+  semanticscholar:
+    enabled: true
+    api_key_env: SEMANTIC_SCHOLAR_API_KEY
+  openalex:
+    enabled: false
+    api_key_env: OPENALEX_API_KEY
+filters:
+  include_keywords:
+  - robustness
+  - adversarial
+  - out-of-distribution
+  - distribution shift
+  - privacy
+  - differential privacy
+  - federated learning privacy
+  - fairness
+  - bias mitigation
+  - responsible ai
+  - calibration
+  - uncertainty
+  - selective prediction
+  - safety evaluation
+  - jailbreak
+  - hallucination
+  - red teaming
+  exclude_keywords:
+  - robot
+  - robotics
+  - humanoid
+  - manipulation
+  - dexterous
+  - teleoperation
+  - sim2real
+  - embodied
+  - vision-language-action
+  - survey
+  - editorial
+  - position paper
+  - tutorial
+  - book chapter
+ranking:
+  weights:
+    relevance: 0.36
+    novelty: 0.2
+    empirical: 0.1
+    source_signal: 0.08
+    momentum: 0.12
+    recency: 0.14
+    actionability: 0.0
+  buckets:
+    must_read: 80
+    worth_reading: 65
+    skim: 50
+digest:
+  daily_top_k: 10
+  weekly_top_k_per_track: 6
+  tracks:
+  - robustness
+  - privacy
+  - fairness
+  - safety_and_eval
+  track_definitions:
+    robustness:
+    - robustness
+    - adversarial
+    - out-of-distribution
+    - distribution shift
+    privacy:
+    - privacy
+    - differential privacy
+    - federated learning privacy
+    fairness:
+    - fairness
+    - bias mitigation
+    - responsible ai
+    safety_and_eval:
+    - calibration
+    - selective prediction
+    - safety evaluation
+    - jailbreak
+    - hallucination
+    - red teaming

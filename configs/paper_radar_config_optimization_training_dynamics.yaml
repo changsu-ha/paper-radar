@@ -1,0 +1,122 @@
+project:
+  name: paper-radar-optimization-training-dynamics
+  language: ko
+  timezone: Asia/Seoul
+sources:
+  arxiv:
+    enabled: true
+    categories:
+    - cs.LG
+    - stat.ML
+    - math.OC
+    - math.ST
+    queries:
+    - optimizer OR optimization OR stochastic gradient OR adaptive method
+    - training dynamics OR implicit bias OR feature learning OR grokking
+    - scaling law OR batch size OR learning rate schedule OR curriculum learning
+    - sharpness OR flat minima OR loss landscape OR generalization gap
+    - test-time compute OR inference-time scaling OR compute-optimal
+    days_back_daily: 10
+    days_back_weekly: 30
+    max_results_per_query: 10
+  openreview:
+    enabled: false
+    venues:
+    - ICLR.cc/2026/Conference
+    - ICML.cc/2026/Conference
+    - NeurIPS.cc/2025/Conference
+    - aistats.org/AISTATS/2026/Conference
+    - auai.org/UAI/2026/Conference
+    keywords:
+    - optimization
+    - training dynamics
+    - scaling laws
+    - implicit bias
+  semanticscholar:
+    enabled: true
+    api_key_env: SEMANTIC_SCHOLAR_API_KEY
+  openalex:
+    enabled: false
+    api_key_env: OPENALEX_API_KEY
+filters:
+  include_keywords:
+  - optimizer
+  - optimization
+  - stochastic gradient
+  - sgd
+  - adam
+  - adaptive method
+  - mirror descent
+  - training dynamics
+  - implicit bias
+  - feature learning
+  - grokking
+  - scaling law
+  - batch size
+  - learning rate
+  - curriculum learning
+  - compute-optimal
+  - sharpness
+  - flat minima
+  - loss landscape
+  - generalization gap
+  - test-time compute
+  - inference-time scaling
+  exclude_keywords:
+  - robot
+  - robotics
+  - humanoid
+  - manipulation
+  - dexterous
+  - teleoperation
+  - sim2real
+  - embodied
+  - vision-language-action
+  - survey
+  - editorial
+  - position paper
+  - tutorial
+  - book chapter
+ranking:
+  weights:
+    relevance: 0.36
+    novelty: 0.22
+    empirical: 0.06
+    source_signal: 0.08
+    momentum: 0.11
+    recency: 0.17
+    actionability: 0.0
+  buckets:
+    must_read: 80
+    worth_reading: 65
+    skim: 50
+digest:
+  daily_top_k: 10
+  weekly_top_k_per_track: 6
+  tracks:
+  - optimizers
+  - training_dynamics
+  - scaling_laws
+  - loss_landscape
+  track_definitions:
+    optimizers:
+    - optimizer
+    - sgd
+    - adam
+    - adaptive method
+    - mirror descent
+    training_dynamics:
+    - training dynamics
+    - implicit bias
+    - feature learning
+    - grokking
+    scaling_laws:
+    - scaling law
+    - compute-optimal
+    - batch size
+    - test-time compute
+    loss_landscape:
+    - sharpness
+    - flat minima
+    - loss landscape
+    - generalization gap

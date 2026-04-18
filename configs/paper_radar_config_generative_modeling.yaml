@@ -1,0 +1,111 @@
+project:
+  name: paper-radar-generative-modeling
+  language: ko
+  timezone: Asia/Seoul
+sources:
+  arxiv:
+    enabled: true
+    categories:
+    - cs.LG
+    - stat.ML
+    - cs.CV
+    - cs.CL
+    queries:
+    - diffusion model OR flow matching OR score matching
+    - autoregressive model OR latent variable model OR variational inference
+    - consistency model OR rectified flow OR diffusion transformer
+    - energy-based model OR likelihood-free OR generative modeling
+    - synthetic data generation OR generative evaluation OR controllable generation
+    days_back_daily: 10
+    days_back_weekly: 30
+    max_results_per_query: 10
+  openreview:
+    enabled: false
+    venues:
+    - ICLR.cc/2026/Conference
+    - ICML.cc/2026/Conference
+    - NeurIPS.cc/2025/Conference
+    - aistats.org/AISTATS/2026/Conference
+    - auai.org/UAI/2026/Conference
+    keywords:
+    - diffusion models
+    - flow matching
+    - generative modeling
+    - autoregressive models
+  semanticscholar:
+    enabled: true
+    api_key_env: SEMANTIC_SCHOLAR_API_KEY
+  openalex:
+    enabled: false
+    api_key_env: OPENALEX_API_KEY
+filters:
+  include_keywords:
+  - diffusion model
+  - flow matching
+  - score matching
+  - autoregressive model
+  - latent variable model
+  - variational inference
+  - consistency model
+  - rectified flow
+  - diffusion transformer
+  - energy-based model
+  - generative modeling
+  - synthetic data generation
+  - controllable generation
+  - sampling
+  - likelihood
+  exclude_keywords:
+  - robot
+  - robotics
+  - humanoid
+  - manipulation
+  - dexterous
+  - teleoperation
+  - sim2real
+  - embodied
+  - vision-language-action
+  - survey
+  - editorial
+  - position paper
+  - tutorial
+  - book chapter
+ranking:
+  weights:
+    relevance: 0.34
+    novelty: 0.22
+    empirical: 0.1
+    source_signal: 0.08
+    momentum: 0.13
+    recency: 0.13
+    actionability: 0.0
+  buckets:
+    must_read: 80
+    worth_reading: 65
+    skim: 50
+digest:
+  daily_top_k: 10
+  weekly_top_k_per_track: 6
+  tracks:
+  - diffusion_and_flow
+  - autoregressive
+  - latent_variable
+  - evaluation_and_control
+  track_definitions:
+    diffusion_and_flow:
+    - diffusion model
+    - flow matching
+    - score matching
+    - rectified flow
+    autoregressive:
+    - autoregressive model
+    - sampling
+    - likelihood
+    latent_variable:
+    - latent variable model
+    - variational inference
+    - energy-based model
+    evaluation_and_control:
+    - controllable generation
+    - synthetic data generation
+    - generative evaluation
