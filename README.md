@@ -1,14 +1,16 @@
 # Paper Radar Harness
 
-Paper Radar Harness는 최근 논문을 수집하고, 규칙 기반으로 점수를 매기고, track별 digest와 preset 비교를 로컬에서 빠르게 실험하기 위한 도구입니다.
+Paper Radar Harness는 최근 논문을 수집하고, 메타데이터를 enrich한 뒤, 규칙 기반으로 점수를 계산하고, digest와 preset 비교를 할 수 있게 만든 로컬 도구입니다.
 
-현재 범위:
+현재 기능:
 
 - `arXiv` 수집
 - `OpenReview` 수집
-- `Semantic Scholar`, `OpenAlex` enrich
+- `Semantic Scholar` enrich
+- `OpenAlex` enrich
 - rule-based ranking
-- track assignment + daily / weekly digest
+- track assignment
+- daily / weekly digest
 - Streamlit GUI
 - YAML preset 저장
 - config A/B 비교
@@ -138,12 +140,12 @@ python -m streamlit run paper_radar_app.py
 python -m streamlit run paper_radar_app.py -- --config-path paper_radar_config_fundamental_ml.yaml
 ```
 
-하지만 GUI 자체는 시작 인자에 고정되지 않습니다. 사이드바에서 다음 YAML을 드롭다운으로 선택하고 `불러오기` 할 수 있습니다.
+GUI에서는 시작 인자에 고정되지 않고, 사이드바에서 다음 YAML을 드롭다운으로 바꿔가며 실험할 수 있습니다.
 
 - repo 루트의 `paper_radar_config*.yaml`
 - `data/gui_presets/*.yaml`
 
-GUI 탭:
+탭 구성:
 
 - `Single Run`
   현재 fetch snapshot 기준 rerank 결과와 논문 상세
@@ -157,6 +159,93 @@ GUI 탭:
 - fetch 관련 설정 변경은 `Fetch`를 다시 눌러야 반영됩니다.
 - ranking과 digest 관련 설정 변경은 마지막 fetch snapshot에 즉시 재적용됩니다.
 - `현재 설정 저장`은 `data/gui_presets/<name>.yaml`에 저장합니다.
+
+## GUI 항목 의미
+
+### YAML / preset
+
+- `YAML 파일`
+  실험의 시작점이 되는 설정 파일입니다. 불러오면 현재 세션의 fetch 결과와 비교 상태를 초기화합니다.
+- `저장 이름`
+  현재 화면 설정을 preset YAML로 저장할 이름입니다.
+
+### Fetch 설정
+
+- `검색 기간 (days_back)`
+  최근 며칠 안에 나온 논문만 수집할지 정합니다.
+- `query별 최대 결과 수`
+  각 query에서 최대 몇 편까지 가져올지 정합니다.
+- `arXiv queries`
+  arXiv 검색식입니다. 줄마다 하나의 query로 처리됩니다.
+- `카테고리`
+  arXiv 카테고리 필터입니다.
+- `Semantic Scholar enrich`
+  이미 수집한 논문에 citation, venue, field 정보를 추가로 붙입니다.
+- `OpenReview 수집`
+  OpenReview venue에서 논문을 추가 source로 수집합니다.
+- `OpenReview venues`
+  OpenReview venue id 목록입니다.
+- `OpenReview keywords`
+  OpenReview 수집 결과에서 제목/초록/키워드에 포함되어야 할 필터 키워드입니다.
+- `OpenAlex enrich`
+  이미 수집한 논문에 citation, topic, OA 정보를 추가로 붙입니다.
+
+### Ranking 설정
+
+- `include_keywords`
+  이 키워드가 많이 맞을수록 relevance가 올라갑니다.
+- `exclude_keywords`
+  이 키워드가 발견되면 해당 논문은 바로 `archive` 처리됩니다.
+
+#### weight 의미
+
+- `weight.relevance`
+  내가 보고 싶은 주제와 얼마나 직접적으로 맞는지입니다.
+- `weight.novelty`
+  새로운 문제 설정, 방법, benchmark, dataset 같은 새로움 신호입니다.
+- `weight.empirical`
+  ablation, baseline, simulation, real-world 같은 실험/검증 신호입니다.
+- `weight.source_signal`
+  출처와 메타데이터 품질 신호입니다.
+- `weight.momentum`
+  citation 기반 영향력입니다.
+- `weight.recency`
+  최신성입니다.
+- `weight.actionability`
+  실제로 읽고 적용할 만한 실용성 신호입니다.
+
+#### bucket 의미
+
+- `bucket.must_read`
+  이 점수 이상이면 must_read로 분류합니다.
+- `bucket.worth_reading`
+  이 점수 이상이면 worth_reading으로 분류합니다.
+- `bucket.skim`
+  이 점수 이상이면 skim으로 분류합니다. 그 아래는 archive입니다.
+
+### Digest 설정
+
+- `daily_top_k`
+  daily digest와 export에서 앞쪽에 보여줄 상위 논문 수입니다.
+- `weekly_top_k_per_track`
+  weekly digest에서 track별로 보여줄 최대 논문 수입니다.
+- `track order`
+  여러 track에 동시에 걸릴 때 primary track 우선순서입니다.
+- `custom track_definitions (YAML)`
+  기본 track 정의를 덮어쓰는 YAML입니다.
+
+## source / enrich 의미
+
+- `arXiv`
+  기본 수집 source입니다.
+- `OpenReview`
+  venue 단위 추가 수집 source입니다.
+- `Semantic Scholar enrich`
+  새 논문을 더 가져오는 기능이 아니라, 이미 수집한 논문에 citation / venue / field 정보를 추가합니다.
+- `OpenAlex enrich`
+  새 논문을 더 가져오는 기능이 아니라, 이미 수집한 논문에 citation / topic / OA 정보를 추가합니다.
+
+현재 구조에서는 source별 개별 weight는 없습니다. 모든 논문에 공통으로 `relevance`, `novelty`, `empirical`, `source_signal`, `momentum`, `recency`, `actionability`의 global weight가 적용됩니다. source 차이는 주로 `source_signal`, citation, venue, topic 같은 metadata를 통해 간접 반영됩니다.
 
 ## CLI 사용
 
@@ -177,8 +266,6 @@ python paper_radar_starter.py --config-path paper_radar_config_fundamental_ml.ya
 ```bash
 python paper_radar_starter.py paper_radar_config_fundamental_ml.yaml
 ```
-
-CLI와 GUI 모두 run 결과를 SQLite에 기록하고, 필요하면 `data/`로 export합니다.
 
 ## 설정 파일
 
@@ -207,7 +294,7 @@ CLI와 GUI 모두 run 결과를 SQLite에 기록하고, 필요하면 `data/`로 
 
 이전 버전 YAML에 `llm:` 섹션이 남아 있어도 로드는 되지만, 현재 버전에서는 무시합니다. 새로 저장되는 YAML에는 `llm`이 포함되지 않습니다.
 
-weight 합계가 1.0이 아니면 scoring 직전에 양수 합 기준으로 자동 정규화합니다.
+weight 합계가 1.0이 아니면 scoring 직전에 자동 정규화합니다.
 
 ## 저장소와 출력
 
@@ -288,10 +375,3 @@ source별 partial failure를 허용합니다. 경고는 `data/runtime_warnings.l
 ### Compare 탭에 결과가 비어 있음
 
 비교 대상 YAML 각각에 대해 최소 한 번은 `Fetch`를 실행해서 run snapshot이 SQLite에 저장돼 있어야 합니다.
-
-## 현재 범위
-
-- 로컬 단일 사용자 기준입니다.
-- ranking은 rule-based입니다.
-- source 실패는 partial failure로 처리합니다.
-- YAML 비교는 preset 전용이 아니라, GUI에서 발견한 config YAML 전체를 대상으로 합니다.

@@ -90,6 +90,42 @@ RESET_SESSION_KEYS = (
     "compare_run_b",
 )
 
+FIELD_HELP = {
+    "config_selector": "실험의 시작점이 되는 YAML 설정 파일입니다. 불러오면 현재 세션의 fetch 결과와 비교 상태를 초기화합니다.",
+    "preset_name": "현재 화면 설정을 data/gui_presets/<name>.yaml 로 저장할 때 사용할 이름입니다.",
+    "days_back": "최근 며칠 안에 나온 논문만 수집할지 정합니다. 숫자가 작을수록 최신 논문만 봅니다.",
+    "max_results_per_query": "각 query에서 최대 몇 편까지 가져올지 정합니다. 값이 클수록 더 넓게 수집하지만 속도는 느려집니다.",
+    "queries_text": "arXiv 검색식입니다. 줄마다 하나의 query로 처리됩니다.",
+    "categories": "arXiv 카테고리 필터입니다. query와 함께 적용됩니다.",
+    "enable_semanticscholar": "Semantic Scholar에서 citation, venue, field 정보를 추가로 붙입니다. 후보 논문 수를 늘리는 기능은 아니고 메타데이터 enrich입니다.",
+    "enable_openreview": "OpenReview에서 venue 단위로 논문을 추가 수집합니다. arXiv와 별도 source입니다.",
+    "openreview_venues_text": "OpenReview venue id 목록입니다. 줄마다 하나씩 입력합니다.",
+    "openreview_keywords_text": "OpenReview 수집 결과 중 제목/초록/키워드에 들어 있어야 할 키워드입니다. 쉼표 또는 줄바꿈으로 구분합니다.",
+    "enable_openalex": "OpenAlex에서 citation, topic, OA 정보를 추가로 붙입니다. 후보 논문 수를 늘리는 기능은 아니고 메타데이터 enrich입니다.",
+    "include_keywords_text": "이 키워드가 논문 텍스트에 많이 등장할수록 relevance 점수가 올라갑니다.",
+    "exclude_keywords_text": "이 키워드가 발견되면 해당 논문은 바로 archive 처리됩니다.",
+    "daily_top_k": "daily digest와 export에서 앞쪽에 보여줄 상위 논문 수입니다.",
+    "weekly_top_k_per_track": "weekly digest에서 track별로 보여줄 최대 논문 수입니다.",
+    "digest_tracks_text": "track 우선순서입니다. 여러 track에 동시에 걸리면 먼저 나온 track이 primary track이 됩니다.",
+    "track_definitions_text": "기본 track 정의를 덮어쓰는 YAML입니다. label과 keywords를 직접 지정할 수 있습니다.",
+}
+
+WEIGHT_HELP = {
+    "relevance": "내가 보고 싶은 주제와 얼마나 직접적으로 맞는지입니다. include_keywords, 카테고리, primary track이 주로 반영됩니다.",
+    "novelty": "새로운 문제 설정, 방법, benchmark, dataset 같은 새로움 신호입니다.",
+    "empirical": "ablation, baseline, simulation, real-world 같은 실험과 검증 신호입니다.",
+    "source_signal": "출처와 메타데이터 품질 신호입니다. arXiv/OpenReview 존재, accept 여부, review signal, venue, OA 정보가 반영됩니다.",
+    "momentum": "citation 기반 영향력입니다. citation 수가 많을수록 높아지지만 log 스케일이라 급격히 커지지는 않습니다.",
+    "recency": "최신성입니다. 최근 논문일수록 점수가 높습니다.",
+    "actionability": "실제로 읽고 적용할 만한 실용성 신호입니다. robot, policy, world model 같은 행동 지향 키워드가 반영됩니다.",
+}
+
+BUCKET_HELP = {
+    "must_read": "이 점수 이상이면 반드시 읽을 논문으로 분류합니다.",
+    "worth_reading": "이 점수 이상이면 worth_reading으로 분류합니다.",
+    "skim": "이 점수 이상이면 skim으로 분류합니다. 그 아래는 archive입니다.",
+}
+
 
 def main() -> None:
     st.set_page_config(page_title="Paper Radar GUI", layout="wide")
@@ -106,7 +142,7 @@ def main() -> None:
     st.caption(f"SQLite: `{DEFAULT_DB_PATH}`")
 
     with st.sidebar:
-        render_sidebar(discovered_configs, current_config_label)
+        render_sidebar_v2(discovered_configs, current_config_label)
 
     fetch_options = build_fetch_options_from_session()
     rank_options = build_rank_options_from_session()
@@ -337,6 +373,156 @@ def load_yaml_into_session(path: Path) -> None:
     st.session_state["config_template"] = copy.deepcopy(config)
     reset_session_state_for_config(st.session_state)
     apply_config_to_session(config)
+
+
+def render_sidebar_v2(discovered_configs: Mapping[str, Path], current_label: str) -> None:
+    st.header("YAML 선택")
+    labels = list(discovered_configs.keys())
+    if st.session_state.get("config_selector") not in labels:
+        st.session_state["config_selector"] = current_label if current_label in labels else labels[0]
+    st.selectbox(
+        "YAML 파일",
+        labels,
+        key="config_selector",
+        help=FIELD_HELP["config_selector"],
+    )
+    if st.button("불러오기", use_container_width=True):
+        load_yaml_into_session(discovered_configs[st.session_state["config_selector"]])
+        st.rerun()
+
+    with st.expander("항목 설명", expanded=False):
+        st.markdown(
+            """
+`Semantic Scholar enrich`와 `OpenAlex enrich`는 새 논문을 더 모으는 옵션이 아니라, 이미 수집한 논문에 citation, venue, topic, OA 같은 메타데이터를 추가로 붙이는 옵션입니다.
+
+`weight.*`는 source별 weight가 아니라 최종 점수의 평가축 가중치입니다. source는 주로 `source_signal`, `momentum`, 그리고 enrich된 메타데이터를 통해 간접 반영됩니다.
+"""
+        )
+        st.markdown("**weight 의미**")
+        for key in WEIGHT_KEYS:
+            st.markdown(f"- `weight.{key}`: {WEIGHT_HELP[key]}")
+
+    st.divider()
+    st.header("Preset 저장")
+    st.text_input("저장 이름", key="preset_name", help=FIELD_HELP["preset_name"])
+    if st.button("현재 설정 저장", use_container_width=True):
+        preset_name = st.session_state["preset_name"].strip()
+        if not preset_name:
+            st.error("저장할 preset 이름을 입력하세요.")
+        else:
+            save_current_preset(preset_name)
+            st.success(f"`{preset_name}` preset을 저장했습니다.")
+
+    st.divider()
+    st.header("Fetch 설정")
+    st.number_input(
+        "검색 기간 (days_back)",
+        min_value=1,
+        max_value=365,
+        key="days_back",
+        help=FIELD_HELP["days_back"],
+    )
+    st.number_input(
+        "query별 최대 결과 수",
+        min_value=1,
+        max_value=500,
+        key="max_results_per_query",
+        help=FIELD_HELP["max_results_per_query"],
+    )
+    st.text_area(
+        "arXiv queries",
+        height=140,
+        key="queries_text",
+        help=FIELD_HELP["queries_text"],
+    )
+    category_options = sorted(set(CATEGORY_OPTIONS + st.session_state.get("categories", [])))
+    st.multiselect("카테고리", category_options, key="categories", help=FIELD_HELP["categories"])
+    st.toggle(
+        "Semantic Scholar enrich",
+        key="enable_semanticscholar",
+        help=FIELD_HELP["enable_semanticscholar"],
+    )
+    st.toggle(
+        "OpenReview 수집",
+        key="enable_openreview",
+        help=FIELD_HELP["enable_openreview"],
+    )
+    st.text_area(
+        "OpenReview venues",
+        height=90,
+        key="openreview_venues_text",
+        help=FIELD_HELP["openreview_venues_text"],
+    )
+    st.text_area(
+        "OpenReview keywords",
+        height=90,
+        key="openreview_keywords_text",
+        help=FIELD_HELP["openreview_keywords_text"],
+    )
+    st.toggle("OpenAlex enrich", key="enable_openalex", help=FIELD_HELP["enable_openalex"])
+
+    st.divider()
+    st.header("Ranking 설정")
+    st.text_area(
+        "include_keywords",
+        height=120,
+        key="include_keywords_text",
+        help=FIELD_HELP["include_keywords_text"],
+    )
+    st.text_area(
+        "exclude_keywords",
+        height=80,
+        key="exclude_keywords_text",
+        help=FIELD_HELP["exclude_keywords_text"],
+    )
+    for weight_key in WEIGHT_KEYS:
+        st.number_input(
+            f"weight.{weight_key}",
+            min_value=0.0,
+            step=0.01,
+            format="%.4f",
+            key=f"weight_{weight_key}",
+            help=WEIGHT_HELP[weight_key],
+        )
+    for bucket_key in BUCKET_KEYS:
+        st.number_input(
+            f"bucket.{bucket_key}",
+            min_value=0.0,
+            max_value=100.0,
+            step=1.0,
+            format="%.1f",
+            key=f"bucket_{bucket_key}",
+            help=BUCKET_HELP[bucket_key],
+        )
+
+    st.divider()
+    st.header("Digest 설정")
+    st.number_input(
+        "daily_top_k",
+        min_value=1,
+        max_value=100,
+        key="daily_top_k",
+        help=FIELD_HELP["daily_top_k"],
+    )
+    st.number_input(
+        "weekly_top_k_per_track",
+        min_value=1,
+        max_value=50,
+        key="weekly_top_k_per_track",
+        help=FIELD_HELP["weekly_top_k_per_track"],
+    )
+    st.text_area(
+        "track order",
+        height=120,
+        key="digest_tracks_text",
+        help=FIELD_HELP["digest_tracks_text"],
+    )
+    st.text_area(
+        "custom track_definitions (YAML)",
+        height=160,
+        key="track_definitions_text",
+        help=FIELD_HELP["track_definitions_text"],
+    )
 
 
 def apply_config_to_session(config: Mapping[str, Any]) -> None:
