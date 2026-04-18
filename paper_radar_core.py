@@ -1,18 +1,21 @@
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import copy
 import datetime as dt
+import hashlib
 import json
 import math
 import os
 import re
+import sqlite3
 import sys
 import time
 import xml.etree.ElementTree as ET
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Any, Iterable, Mapping, Sequence
 
 import requests
 
@@ -23,11 +26,18 @@ except ModuleNotFoundError:
 
 
 ARXIV_API = "https://export.arxiv.org/api/query"
+OPENREVIEW_API = "https://api2.openreview.net/notes"
+OPENALEX_WORKS_API = "https://api.openalex.org/works"
+OPENAI_CHAT_COMPLETIONS_API = "https://api.openai.com/v1/chat/completions"
 SEMANTIC_SCHOLAR_API = "https://api.semanticscholar.org/graph/v1/paper/search/bulk"
+
 DEFAULT_CONFIG_PATH = Path("paper_radar_config.example.yaml")
+DEFAULT_PROMPTS_PATH = Path("paper_radar_prompts.example.yaml")
 DEFAULT_PRESET_DIR = Path("data/gui_presets")
 DEFAULT_TIMEZONE = "Asia/Seoul"
 DEFAULT_WARNING_LOG_PATH = Path("data/runtime_warnings.log")
+DEFAULT_DB_PATH = Path("data/paper_radar.sqlite3")
+
 WEIGHT_KEYS = (
     "relevance",
     "novelty",
@@ -38,6 +48,166 @@ WEIGHT_KEYS = (
     "actionability",
 )
 BUCKET_KEYS = ("must_read", "worth_reading", "skim")
+TRACK_UNASSIGNED = "unassigned"
+SOURCE_PRIORITY = {"openreview": 4, "arxiv": 3, "openalex": 2, "semanticscholar": 1}
+
+BUILTIN_TRACK_DEFINITIONS: dict[str, dict[str, Any]] = {
+    "vla": {
+        "label": "VLA",
+        "keywords": [
+            "vision-language-action",
+            "vla",
+            "vlm policy",
+            "multimodal policy",
+            "instruction-conditioned control",
+        ],
+    },
+    "manipulation": {
+        "label": "Manipulation",
+        "keywords": [
+            "manipulation",
+            "grasp",
+            "dexterous",
+            "bimanual",
+            "contact-rich",
+            "in-hand",
+        ],
+    },
+    "humanoid": {
+        "label": "Humanoid",
+        "keywords": [
+            "humanoid",
+            "whole-body",
+            "locomotion",
+            "walking",
+            "upper-body",
+            "teleoperation",
+        ],
+    },
+    "world_model": {
+        "label": "World Model",
+        "keywords": [
+            "world model",
+            "predictive control",
+            "latent dynamics",
+            "model-based policy",
+            "planning",
+            "visuomotor world model",
+        ],
+    },
+    "supporting_ml": {
+        "label": "Supporting ML",
+        "keywords": [
+            "data curation",
+            "representation learning",
+            "foundation model",
+            "benchmark",
+            "dataset",
+            "sim2real",
+        ],
+    },
+    "ml_theory": {
+        "label": "ML Theory",
+        "keywords": [
+            "generalization",
+            "optimization",
+            "convergence",
+            "sample complexity",
+            "pac-bayes",
+            "theory",
+        ],
+    },
+    "llm_foundations": {
+        "label": "LLM Foundations",
+        "keywords": [
+            "large language model",
+            "llm",
+            "transformer theory",
+            "in-context learning",
+            "mechanistic interpretability",
+        ],
+    },
+    "data_and_curation": {
+        "label": "Data And Curation",
+        "keywords": [
+            "data curation",
+            "data filtering",
+            "data mixture",
+            "synthetic data",
+            "contamination",
+            "deduplication",
+        ],
+    },
+    "scaling_and_pretraining": {
+        "label": "Scaling And Pretraining",
+        "keywords": [
+            "scaling law",
+            "pretraining",
+            "curriculum learning",
+            "tokenization",
+            "training dynamics",
+        ],
+    },
+    "representation_learning": {
+        "label": "Representation Learning",
+        "keywords": [
+            "representation learning",
+            "self-supervised",
+            "contrastive",
+            "masked modeling",
+            "embedding",
+        ],
+    },
+    "alignment_and_posttraining": {
+        "label": "Alignment And Post-training",
+        "keywords": [
+            "alignment",
+            "post-training",
+            "rlhf",
+            "dpo",
+            "reward model",
+            "verifier",
+        ],
+    },
+}
+
+BUILTIN_PROMPTS = {
+    "daily_radar_ko": {
+        "system": (
+            "당신은 ML/Robot AI 논문 요약가다. 과장 없이 근거 중심으로 한국어로 요약하고, "
+            "실험과 한계를 분명히 적는다."
+        ),
+        "user_template": (
+            "다음 논문 정보를 바탕으로 한국어 요약을 작성하라.\n\n"
+            "[논문]\n"
+            "제목: {title}\n"
+            "초록: {abstract}\n"
+            "카테고리: {categories}\n"
+            "메타데이터: {metadata}\n\n"
+            "JSON으로만 답하라. 필드:\n"
+            "summary, why_it_matters, method, setup_results, robotics_relevance, "
+            "limitations, interest_score, recommended_action"
+        ),
+    },
+    "evaluator_ko": {
+        "system": (
+            "당신은 논문 요약 검증자다. 요약의 과장, 근거 부족, simulation과 real-world 혼동, "
+            "baseline 또는 ablation 관련 오해를 찾아라."
+        ),
+        "user_template": (
+            "다음 초안 요약을 검증하라.\n\n"
+            "[원문]\n"
+            "제목: {title}\n"
+            "초록: {abstract}\n"
+            "근거: {evidence}\n\n"
+            "[초안]\n"
+            "{draft}\n\n"
+            "JSON으로만 답하라. 필드:\n"
+            "verdict, unsupported_claims, novelty_overclaim, simulation_vs_real_error, "
+            "baseline_ablation_issue, notes, revised_summary"
+        ),
+    },
+}
 
 
 @dataclass
@@ -56,6 +226,18 @@ class Paper:
     doi: str | None = None
     citations: int | None = None
     topics: list[str] = field(default_factory=list)
+    decision: str | None = None
+    review_signal: float | None = None
+    review_count: int = 0
+    canonical_id: str | None = None
+    track_ids: list[str] = field(default_factory=list)
+    primary_track: str | None = None
+    track_reasons: dict[str, list[str]] = field(default_factory=dict)
+    summary_ko: str | None = None
+    summary_status: str | None = None
+    evaluator_status: str | None = None
+    evaluator_notes: dict[str, Any] = field(default_factory=dict)
+    source_metadata: dict[str, Any] = field(default_factory=dict)
     raw: dict[str, Any] = field(default_factory=dict)
 
     # harness-generated fields
@@ -79,6 +261,11 @@ class FetchOptions:
     max_results_per_query: int
     enable_semanticscholar: bool
     semanticscholar_api_key_env: str = "SEMANTIC_SCHOLAR_API_KEY"
+    enable_openreview: bool = False
+    openreview_venues: list[str] = field(default_factory=list)
+    openreview_keywords: list[str] = field(default_factory=list)
+    enable_openalex: bool = False
+    openalex_api_key_env: str = "OPENALEX_API_KEY"
 
 
 @dataclass
@@ -88,6 +275,49 @@ class RankOptions:
     weights: dict[str, float]
     buckets: dict[str, float]
     daily_top_k: int
+
+
+@dataclass
+class LLMOptions:
+    enabled: bool = False
+    provider: str = "openai"
+    model_summary: str = "gpt-4o-mini"
+    model_evaluator: str = "gpt-4o-mini"
+    summary_top_n: int = 5
+    prompts_path: str | None = None
+    summary_prompt_id: str = "daily_radar_ko"
+    evaluator_prompt_id: str = "evaluator_ko"
+    max_concurrency: int = 2
+    timeout_s: int = 45
+    api_key_env: str = "OPENAI_API_KEY"
+
+
+@dataclass
+class DigestOptions:
+    daily_top_k: int
+    weekly_top_k_per_track: int
+    tracks: list[str]
+    track_definitions: dict[str, dict[str, Any]] = field(default_factory=dict)
+
+
+@dataclass
+class TrackDigest:
+    daily_markdown: str
+    weekly_markdown: str
+    daily_sections: list[dict[str, Any]]
+    weekly_sections: list[dict[str, Any]]
+
+
+@dataclass
+class RunExecution:
+    run_id: int | None
+    config_hash: str
+    fetch_signature: str
+    raw_papers: list[Paper]
+    ranked_papers: list[Paper]
+    source_status: dict[str, Any]
+    daily_digest: str
+    weekly_digest: str
 
 
 def get_config_path(
@@ -114,6 +344,15 @@ def load_config(path: str | Path) -> dict[str, Any]:
     return _load_simple_yaml(text)
 
 
+def save_config(path: str | Path, config: dict[str, Any]) -> None:
+    if yaml is None:
+        raise RuntimeError("PyYAML is required to save config files.")
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with open(target, "w", encoding="utf-8") as f:
+        yaml.safe_dump(config, f, allow_unicode=True, sort_keys=False)
+
+
 def _warn(message: str) -> None:
     timestamped = f"{dt.datetime.now(dt.timezone.utc).isoformat()} {message}"
     try:
@@ -133,15 +372,6 @@ def _warn(message: str) -> None:
             break
         except OSError:
             continue
-
-
-def save_config(path: str | Path, config: dict[str, Any]) -> None:
-    if yaml is None:
-        raise RuntimeError("PyYAML is required to save config files.")
-    target = Path(path)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    with open(target, "w", encoding="utf-8") as f:
-        yaml.safe_dump(config, f, allow_unicode=True, sort_keys=False)
 
 
 def _load_simple_yaml(text: str) -> Any:
@@ -257,14 +487,6 @@ def normalize_title(title: str) -> str:
     return text
 
 
-def paper_from_dict(data: Mapping[str, Any]) -> Paper:
-    return Paper(**dict(data))
-
-
-def clone_paper(paper: Paper) -> Paper:
-    return paper_from_dict(asdict(paper))
-
-
 def split_multiline_list(value: str) -> list[str]:
     return [part.strip() for part in value.splitlines() if part.strip()]
 
@@ -296,9 +518,36 @@ def normalize_weight_map(weights: Mapping[str, float]) -> tuple[dict[str, float]
     return normalized, raw_sum, not math.isclose(raw_sum, 1.0, rel_tol=1e-9, abs_tol=1e-9)
 
 
+def paper_from_dict(data: Mapping[str, Any]) -> Paper:
+    return Paper(**dict(data))
+
+
+def clone_paper(paper: Paper) -> Paper:
+    return paper_from_dict(asdict(paper))
+
+
+def resolve_prompts_path(path: str | Path | None, config_path: str | Path | None = None) -> Path | None:
+    if not path:
+        return None
+    prompt_path = Path(path).expanduser()
+    if prompt_path.is_absolute():
+        return prompt_path
+    if config_path is not None:
+        return Path(config_path).expanduser().resolve().parent / prompt_path
+    return prompt_path
+
+
+def config_hash(config: Mapping[str, Any]) -> str:
+    payload = json.dumps(config, ensure_ascii=False, sort_keys=True)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 def build_fetch_options_from_config(config: Mapping[str, Any]) -> FetchOptions:
-    arxiv_cfg = config["sources"]["arxiv"]
-    ss_cfg = config["sources"].get("semanticscholar", {})
+    sources = config.get("sources", {})
+    arxiv_cfg = sources.get("arxiv", {})
+    openreview_cfg = sources.get("openreview", {})
+    ss_cfg = sources.get("semanticscholar", {})
+    openalex_cfg = sources.get("openalex", {})
     return FetchOptions(
         queries=[str(query).strip() for query in arxiv_cfg.get("queries", []) if str(query).strip()],
         categories=[str(cat).strip() for cat in arxiv_cfg.get("categories", []) if str(cat).strip()],
@@ -306,16 +555,64 @@ def build_fetch_options_from_config(config: Mapping[str, Any]) -> FetchOptions:
         max_results_per_query=int(arxiv_cfg.get("max_results_per_query", 100)),
         enable_semanticscholar=bool(ss_cfg.get("enabled", False)),
         semanticscholar_api_key_env=str(ss_cfg.get("api_key_env") or "SEMANTIC_SCHOLAR_API_KEY"),
+        enable_openreview=bool(openreview_cfg.get("enabled", False)),
+        openreview_venues=[
+            str(venue).strip() for venue in openreview_cfg.get("venues", []) if str(venue).strip()
+        ],
+        openreview_keywords=parse_keywords_input(openreview_cfg.get("keywords", [])),
+        enable_openalex=bool(openalex_cfg.get("enabled", False)),
+        openalex_api_key_env=str(openalex_cfg.get("api_key_env") or "OPENALEX_API_KEY"),
     )
 
 
 def build_rank_options_from_config(config: Mapping[str, Any]) -> RankOptions:
     return RankOptions(
-        include_keywords=parse_keywords_input(config["filters"].get("include_keywords", [])),
-        exclude_keywords=parse_keywords_input(config["filters"].get("exclude_keywords", [])),
-        weights={key: float(config["ranking"]["weights"].get(key, 0.0)) for key in WEIGHT_KEYS},
-        buckets={key: float(config["ranking"]["buckets"].get(key, 0.0)) for key in BUCKET_KEYS},
-        daily_top_k=int(config["digest"].get("daily_top_k", 8)),
+        include_keywords=parse_keywords_input(config.get("filters", {}).get("include_keywords", [])),
+        exclude_keywords=parse_keywords_input(config.get("filters", {}).get("exclude_keywords", [])),
+        weights={key: float(config.get("ranking", {}).get("weights", {}).get(key, 0.0)) for key in WEIGHT_KEYS},
+        buckets={key: float(config.get("ranking", {}).get("buckets", {}).get(key, 0.0)) for key in BUCKET_KEYS},
+        daily_top_k=int(config.get("digest", {}).get("daily_top_k", 8)),
+    )
+
+
+def build_llm_options_from_config(
+    config: Mapping[str, Any],
+    config_path: str | Path | None = None,
+) -> LLMOptions:
+    llm_cfg = config.get("llm", {})
+    prompts_path = resolve_prompts_path(llm_cfg.get("prompts_path") or DEFAULT_PROMPTS_PATH, config_path)
+    return LLMOptions(
+        enabled=bool(llm_cfg.get("enabled", False)),
+        provider=str(llm_cfg.get("provider", "openai")),
+        model_summary=str(llm_cfg.get("model_summary", "gpt-4o-mini")),
+        model_evaluator=str(llm_cfg.get("model_evaluator", "gpt-4o-mini")),
+        summary_top_n=int(llm_cfg.get("summary_top_n", 5)),
+        prompts_path=str(prompts_path) if prompts_path is not None else None,
+        summary_prompt_id=str(llm_cfg.get("summary_prompt_id", "daily_radar_ko")),
+        evaluator_prompt_id=str(llm_cfg.get("evaluator_prompt_id", "evaluator_ko")),
+        max_concurrency=int(llm_cfg.get("max_concurrency", 2)),
+        timeout_s=int(llm_cfg.get("timeout_s", 45)),
+        api_key_env=str(llm_cfg.get("api_key_env", "OPENAI_API_KEY")),
+    )
+
+
+def build_digest_options_from_config(config: Mapping[str, Any]) -> DigestOptions:
+    digest_cfg = config.get("digest", {})
+    configured_tracks = [str(track).strip() for track in digest_cfg.get("tracks", []) if str(track).strip()]
+    track_defs_cfg = digest_cfg.get("track_definitions") or {}
+    track_definitions = copy.deepcopy(BUILTIN_TRACK_DEFINITIONS)
+    for track_id, definition in track_defs_cfg.items():
+        track_definitions[str(track_id)] = {
+            "label": str(definition.get("label", track_id)),
+            "keywords": parse_keywords_input(definition.get("keywords", [])),
+        }
+    if TRACK_UNASSIGNED not in track_definitions:
+        track_definitions[TRACK_UNASSIGNED] = {"label": "Unassigned", "keywords": []}
+    return DigestOptions(
+        daily_top_k=int(digest_cfg.get("daily_top_k", 8)),
+        weekly_top_k_per_track=int(digest_cfg.get("weekly_top_k_per_track", 5)),
+        tracks=configured_tracks or [TRACK_UNASSIGNED],
+        track_definitions=track_definitions,
     )
 
 
@@ -323,16 +620,21 @@ def build_config_from_options(
     base_config: Mapping[str, Any],
     fetch_options: FetchOptions,
     rank_options: RankOptions,
+    llm_options: LLMOptions | None = None,
+    digest_options: DigestOptions | None = None,
 ) -> dict[str, Any]:
     config = copy.deepcopy(dict(base_config))
     config.setdefault("sources", {})
     config["sources"].setdefault("arxiv", {})
     config["sources"].setdefault("semanticscholar", {})
+    config["sources"].setdefault("openreview", {})
+    config["sources"].setdefault("openalex", {})
     config.setdefault("filters", {})
     config.setdefault("ranking", {})
     config["ranking"].setdefault("weights", {})
     config["ranking"].setdefault("buckets", {})
     config.setdefault("digest", {})
+    config.setdefault("llm", {})
 
     normalized_weights, _, _ = normalize_weight_map(rank_options.weights)
 
@@ -342,11 +644,50 @@ def build_config_from_options(
     config["sources"]["arxiv"]["max_results_per_query"] = int(fetch_options.max_results_per_query)
     config["sources"]["semanticscholar"]["enabled"] = bool(fetch_options.enable_semanticscholar)
     config["sources"]["semanticscholar"]["api_key_env"] = fetch_options.semanticscholar_api_key_env
+    config["sources"]["openreview"]["enabled"] = bool(fetch_options.enable_openreview)
+    config["sources"]["openreview"]["venues"] = list(fetch_options.openreview_venues)
+    config["sources"]["openreview"]["keywords"] = list(fetch_options.openreview_keywords)
+    config["sources"]["openalex"]["enabled"] = bool(fetch_options.enable_openalex)
+    config["sources"]["openalex"]["api_key_env"] = fetch_options.openalex_api_key_env
     config["filters"]["include_keywords"] = list(rank_options.include_keywords)
     config["filters"]["exclude_keywords"] = list(rank_options.exclude_keywords)
     config["ranking"]["weights"] = normalized_weights
     config["ranking"]["buckets"] = {key: float(rank_options.buckets.get(key, 0.0)) for key in BUCKET_KEYS}
     config["digest"]["daily_top_k"] = int(rank_options.daily_top_k)
+
+    if llm_options is not None:
+        config["llm"] = {
+            "enabled": bool(llm_options.enabled),
+            "provider": llm_options.provider,
+            "model_summary": llm_options.model_summary,
+            "model_evaluator": llm_options.model_evaluator,
+            "summary_top_n": int(llm_options.summary_top_n),
+            "prompts_path": llm_options.prompts_path or str(DEFAULT_PROMPTS_PATH),
+            "summary_prompt_id": llm_options.summary_prompt_id,
+            "evaluator_prompt_id": llm_options.evaluator_prompt_id,
+            "max_concurrency": int(llm_options.max_concurrency),
+            "timeout_s": int(llm_options.timeout_s),
+            "api_key_env": llm_options.api_key_env,
+        }
+
+    if digest_options is not None:
+        config["digest"]["daily_top_k"] = int(digest_options.daily_top_k)
+        config["digest"]["weekly_top_k_per_track"] = int(digest_options.weekly_top_k_per_track)
+        config["digest"]["tracks"] = list(digest_options.tracks)
+        custom_track_defs: dict[str, Any] = {}
+        for track_id, definition in digest_options.track_definitions.items():
+            builtin = BUILTIN_TRACK_DEFINITIONS.get(track_id)
+            if builtin == definition:
+                continue
+            custom_track_defs[track_id] = {
+                "label": definition.get("label", track_id),
+                "keywords": list(definition.get("keywords", [])),
+            }
+        if custom_track_defs:
+            config["digest"]["track_definitions"] = custom_track_defs
+        else:
+            config["digest"].pop("track_definitions", None)
+
     return config
 
 
@@ -357,17 +698,23 @@ def fetch_options_signature(fetch_options: FetchOptions) -> str:
         "days_back": int(fetch_options.days_back),
         "max_results_per_query": int(fetch_options.max_results_per_query),
         "enable_semanticscholar": bool(fetch_options.enable_semanticscholar),
+        "enable_openreview": bool(fetch_options.enable_openreview),
+        "openreview_venues": list(fetch_options.openreview_venues),
+        "openreview_keywords": list(fetch_options.openreview_keywords),
+        "enable_openalex": bool(fetch_options.enable_openalex),
     }
     return json.dumps(payload, ensure_ascii=False, sort_keys=True)
 
 
-def describe_keyword_hits(paper: Paper, rank_options: RankOptions) -> dict[str, list[str]]:
-    text = f"{paper.title} {paper.abstract}".lower()
+def describe_keyword_hits(paper: Paper, rank_options: RankOptions) -> dict[str, list[str] | str | None]:
+    text = _paper_text(paper)
     include_hits = [kw for kw in rank_options.include_keywords if kw in text]
     exclude_hits = [kw for kw in rank_options.exclude_keywords if kw in text]
     return {
         "include_hits": include_hits,
         "exclude_hits": exclude_hits,
+        "primary_track": paper.primary_track,
+        "track_ids": list(paper.track_ids),
     }
 
 
@@ -379,14 +726,205 @@ def papers_to_records(papers: Iterable[Paper]) -> list[dict[str, Any]]:
                 "title": paper.title,
                 "final_score": paper.final_score,
                 "bucket": paper.bucket,
+                "primary_track": paper.primary_track,
                 "published_at": paper.published_at,
                 "categories": ", ".join(paper.categories),
                 "citations": paper.citations,
                 "source": paper.source,
+                "venue": paper.venue,
+                "decision": paper.decision,
+                "review_signal": paper.review_signal,
+                "summary_status": paper.summary_status,
+                "evaluator_status": paper.evaluator_status,
                 "url": paper.url,
             }
         )
     return records
+
+
+def load_prompt_bundle(path: str | Path | None) -> dict[str, Any]:
+    bundle = copy.deepcopy(BUILTIN_PROMPTS)
+    if not path:
+        return bundle
+    prompt_path = Path(path)
+    if not prompt_path.exists():
+        return bundle
+    loaded = load_config(prompt_path)
+    if isinstance(loaded, dict):
+        for key, value in loaded.items():
+            if isinstance(value, dict):
+                bundle[str(key)] = value
+    return bundle
+
+
+def compute_canonical_key(paper: Paper) -> str:
+    doi = normalize_doi(paper.doi)
+    if doi:
+        return f"doi:{doi}"
+    arxiv_id = extract_arxiv_id(paper)
+    if arxiv_id:
+        return f"arxiv:{arxiv_id}"
+    if paper.source == "openreview" and paper.external_id:
+        return f"openreview:{paper.external_id}"
+    title_key = paper.normalized_title or normalize_title(paper.title)
+    author_key = _author_signature(paper.authors)
+    return f"title:{title_key}|authors:{author_key}"
+
+
+def normalize_doi(doi: str | None) -> str | None:
+    if not doi:
+        return None
+    text = doi.strip().lower()
+    text = text.removeprefix("https://doi.org/")
+    text = text.removeprefix("http://doi.org/")
+    return text or None
+
+
+def extract_arxiv_id(paper: Paper) -> str | None:
+    if paper.source == "arxiv" and paper.external_id:
+        return paper.external_id.lower()
+    candidate = paper.source_metadata.get("arxiv", {}).get("external_id")
+    if candidate:
+        return str(candidate).lower()
+    if paper.url:
+        match = re.search(r"arxiv\.org/(?:abs|pdf)/([^/?#]+)", paper.url)
+        if match:
+            return match.group(1).replace(".pdf", "").lower()
+    return None
+
+
+def merge_source_metadata(*payloads: Mapping[str, Any]) -> dict[str, Any]:
+    merged: dict[str, Any] = {}
+    for payload in payloads:
+        for key, value in payload.items():
+            if key not in merged:
+                merged[key] = copy.deepcopy(value)
+            elif isinstance(merged[key], dict) and isinstance(value, Mapping):
+                nested = dict(merged[key])
+                nested.update(copy.deepcopy(dict(value)))
+                merged[key] = nested
+            elif isinstance(merged[key], list) and isinstance(value, Sequence) and not isinstance(value, str):
+                merged[key] = list(dict.fromkeys([*merged[key], *list(value)]))
+            elif value not in (None, "", [], {}):
+                merged[key] = copy.deepcopy(value)
+    return merged
+
+
+def deduplicate(papers: Iterable[Paper]) -> list[Paper]:
+    merged: list[Paper] = []
+    by_key: dict[str, Paper] = {}
+    by_title: dict[str, list[Paper]] = {}
+
+    for paper in papers:
+        candidate = clone_paper(paper)
+        candidate.normalized_title = candidate.normalized_title or normalize_title(candidate.title)
+        canonical_key = compute_canonical_key(candidate)
+        if canonical_key in by_key:
+            merged_paper = _merge_papers(by_key[canonical_key], candidate)
+            by_key[canonical_key] = merged_paper
+            _replace_in_list(merged, canonical_key, merged_paper)
+            continue
+
+        title_key = candidate.normalized_title or ""
+        matched_existing = None
+        for existing in by_title.get(title_key, []):
+            if _author_overlap(existing.authors, candidate.authors) > 0 or not existing.authors or not candidate.authors:
+                matched_existing = existing
+                break
+        if matched_existing is not None:
+            existing_key = compute_canonical_key(matched_existing)
+            merged_paper = _merge_papers(matched_existing, candidate)
+            new_key = compute_canonical_key(merged_paper)
+            by_key.pop(existing_key, None)
+            by_key[new_key] = merged_paper
+            _replace_in_list(merged, existing_key, merged_paper)
+            by_title[title_key] = [merged_paper if item is matched_existing else item for item in by_title[title_key]]
+            continue
+
+        candidate.canonical_id = canonical_key
+        by_key[canonical_key] = candidate
+        by_title.setdefault(title_key, []).append(candidate)
+        merged.append(candidate)
+
+    for paper in merged:
+        paper.canonical_id = compute_canonical_key(paper)
+    return merged
+
+
+def _replace_in_list(papers: list[Paper], canonical_key: str, replacement: Paper) -> None:
+    for idx, item in enumerate(papers):
+        if compute_canonical_key(item) == canonical_key:
+            papers[idx] = replacement
+            return
+
+
+def _merge_papers(existing: Paper, candidate: Paper) -> Paper:
+    merged = clone_paper(existing)
+    merged.normalized_title = merged.normalized_title or normalize_title(merged.title)
+
+    if SOURCE_PRIORITY.get(candidate.source, 0) > SOURCE_PRIORITY.get(merged.source, 0):
+        merged.source = candidate.source
+        merged.external_id = candidate.external_id or merged.external_id
+        merged.url = candidate.url or merged.url
+        merged.pdf_url = candidate.pdf_url or merged.pdf_url
+
+    if len(candidate.abstract or "") > len(merged.abstract or ""):
+        merged.abstract = candidate.abstract
+    if candidate.title and len(candidate.title) > len(merged.title):
+        merged.title = candidate.title
+    if candidate.venue and not merged.venue:
+        merged.venue = candidate.venue
+    if candidate.venue and candidate.source == "openreview":
+        merged.venue = candidate.venue
+    merged.authors = list(dict.fromkeys([*merged.authors, *candidate.authors]))
+    merged.categories = list(dict.fromkeys([*merged.categories, *candidate.categories]))
+    merged.topics = list(dict.fromkeys([*merged.topics, *candidate.topics]))
+    merged.doi = normalize_doi(merged.doi) or normalize_doi(candidate.doi)
+    merged.published_at = _choose_iso_time(merged.published_at, candidate.published_at, prefer_earliest=True)
+    merged.updated_at = _choose_iso_time(merged.updated_at, candidate.updated_at, prefer_earliest=False)
+    merged.citations = max(x for x in [merged.citations, candidate.citations] if x is not None) if any(
+        x is not None for x in [merged.citations, candidate.citations]
+    ) else None
+    merged.decision = candidate.decision or merged.decision
+    merged.review_count = max(merged.review_count, candidate.review_count)
+    merged.review_signal = _max_optional(merged.review_signal, candidate.review_signal)
+    merged.source_metadata = merge_source_metadata(merged.source_metadata, candidate.source_metadata)
+    merged.raw = merge_source_metadata(merged.raw, candidate.raw)
+    merged.canonical_id = compute_canonical_key(merged)
+    return merged
+
+
+def _author_signature(authors: Sequence[str]) -> str:
+    if not authors:
+        return "none"
+    normalized = [normalize_title(author).replace(" ", "") for author in authors[:4]]
+    return "|".join(sorted(filter(None, normalized)))
+
+
+def _author_overlap(left: Sequence[str], right: Sequence[str]) -> int:
+    left_set = {normalize_title(author).replace(" ", "") for author in left if author}
+    right_set = {normalize_title(author).replace(" ", "") for author in right if author}
+    return len(left_set & right_set)
+
+
+def _max_optional(left: float | None, right: float | None) -> float | None:
+    values = [value for value in (left, right) if value is not None]
+    return max(values) if values else None
+
+
+def _max_int(left: int | None, right: int | None) -> int | None:
+    values = [int(value) for value in (left, right) if value is not None]
+    return max(values) if values else None
+
+
+def _choose_iso_time(left: str | None, right: str | None, prefer_earliest: bool) -> str | None:
+    left_dt = _parse_any_datetime(left)
+    right_dt = _parse_any_datetime(right)
+    candidates = [value for value in (left_dt, right_dt) if value is not None]
+    if not candidates:
+        return left or right
+    chosen = min(candidates) if prefer_earliest else max(candidates)
+    return chosen.isoformat().replace("+00:00", "Z")
 
 
 class ArxivClient:
@@ -405,8 +943,10 @@ class ArxivClient:
         sort_by: str = "submittedDate",
         sort_order: str = "descending",
     ) -> list[Paper]:
-        cat_clause = " OR ".join(f"cat:{c}" for c in categories)
-        full_query = f"({query}) AND ({cat_clause})"
+        cat_clause = " OR ".join(f"cat:{c}" for c in categories) if categories else ""
+        full_query = query
+        if cat_clause:
+            full_query = f"({query}) AND ({cat_clause})"
         cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=max(0, int(days_back)))
 
         collected: list[Paper] = []
@@ -453,7 +993,7 @@ class ArxivClient:
             "sortBy": sort_by,
             "sortOrder": sort_order,
         }
-        headers = {"User-Agent": "paper-radar-harness/0.1 (+research scout)"}
+        headers = {"User-Agent": "paper-radar-harness/0.2 (+research scout)"}
         try:
             resp = requests.get(ARXIV_API, params=params, headers=headers, timeout=30)
             resp.raise_for_status()
@@ -508,7 +1048,14 @@ class ArxivClient:
                     pdf_url=pdf_url,
                     categories=cats,
                     doi=doi,
-                    raw={"entry_id": entry_id},
+                    raw={"arxiv": {"entry_id": entry_id}},
+                    source_metadata={
+                        "arxiv": {
+                            "external_id": external_id,
+                            "entry_id": entry_id,
+                            "categories": cats,
+                        }
+                    },
                     normalized_title=normalize_title(title),
                 )
             )
@@ -516,13 +1063,156 @@ class ArxivClient:
 
     @staticmethod
     def _is_recent_enough(published_at: str | None, cutoff: dt.datetime) -> bool:
-        if not published_at:
-            return False
-        try:
-            published = dt.datetime.fromisoformat(published_at.replace("Z", "+00:00"))
-        except ValueError:
+        published = _parse_any_datetime(published_at)
+        if not published:
             return False
         return published >= cutoff
+
+
+class OpenReviewClient:
+    def __init__(self, pause_s: float = 0.5, page_size: int = 200) -> None:
+        self.pause_s = pause_s
+        self.page_size = page_size
+
+    def collect(
+        self,
+        venues: Sequence[str],
+        keywords: Sequence[str],
+        days_back: int,
+    ) -> tuple[list[Paper], dict[str, Any]]:
+        collected: list[Paper] = []
+        status = {"enabled": True, "venues": {}, "errors": []}
+        cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=max(0, int(days_back)))
+        lowered_keywords = [keyword.lower() for keyword in keywords if keyword]
+
+        for venue in venues:
+            venue_notes = self._fetch_venue_notes(venue)
+            matched = 0
+            papers: list[Paper] = []
+            for note in venue_notes:
+                paper = self._paper_from_note(note, venue)
+                if not paper:
+                    continue
+                published = _parse_any_datetime(paper.published_at or paper.updated_at)
+                if published is not None and published < cutoff:
+                    continue
+                if lowered_keywords:
+                    text = _paper_text(paper)
+                    if not any(keyword in text for keyword in lowered_keywords):
+                        continue
+                papers.append(paper)
+                matched += 1
+            collected.extend(papers)
+            status["venues"][venue] = {"fetched": len(venue_notes), "matched": matched}
+
+        return collected, status
+
+    def _fetch_venue_notes(self, venue: str) -> list[dict[str, Any]]:
+        notes: list[dict[str, Any]] = []
+        errors: list[str] = []
+        for invitation_suffix in ("Blind_Submission", "Submission"):
+            invitation = f"{venue}/-/{invitation_suffix}"
+            offset = 0
+            while True:
+                params = {
+                    "invitation": invitation,
+                    "details": "directReplies",
+                    "limit": self.page_size,
+                    "offset": offset,
+                }
+                try:
+                    response = requests.get(OPENREVIEW_API, params=params, timeout=30)
+                    response.raise_for_status()
+                    payload = response.json()
+                except (requests.RequestException, ValueError, OSError) as exc:
+                    errors.append(f"{invitation}: {exc}")
+                    break
+                batch = payload.get("notes") or payload.get("results") or []
+                if batch:
+                    notes.extend(batch)
+                if len(batch) < self.page_size:
+                    break
+                offset += len(batch)
+                time.sleep(self.pause_s)
+            if notes:
+                return notes
+        for error in errors:
+            _warn(f"[warn] OpenReview query failed: {error}")
+        return notes
+
+    def _paper_from_note(self, note: Mapping[str, Any], venue: str) -> Paper | None:
+        content = note.get("content") or {}
+        title = _content_value(content, "title")
+        abstract = _content_value(content, "abstract")
+        if not title or not abstract:
+            return None
+        authors = _normalize_author_list(_content_value(content, "authors"))
+        keywords = _normalize_string_list(_content_value(content, "keywords"))
+        forum_id = str(note.get("forum") or note.get("id") or "")
+        note_id = str(note.get("id") or forum_id)
+        replies = list((note.get("details") or {}).get("directReplies") or [])
+        decision, review_signal, review_count = self._extract_review_signal(replies)
+        doi = normalize_doi(_content_value(content, "doi"))
+        published_at = _ms_to_iso(note.get("pdate") or note.get("odate") or note.get("cdate"))
+        updated_at = _ms_to_iso(note.get("mdate") or note.get("tcdate"))
+        raw_payload = {"note_id": note_id, "forum_id": forum_id, "reply_count": len(replies)}
+        return Paper(
+            source="openreview",
+            external_id=forum_id or note_id,
+            title=_clean(str(title)),
+            abstract=_clean(str(abstract)),
+            authors=authors,
+            published_at=published_at,
+            updated_at=updated_at,
+            url=f"https://openreview.net/forum?id={forum_id or note_id}",
+            pdf_url=f"https://openreview.net/pdf?id={forum_id or note_id}",
+            venue=venue,
+            categories=[],
+            doi=doi,
+            topics=keywords,
+            decision=decision,
+            review_signal=review_signal,
+            review_count=review_count,
+            normalized_title=normalize_title(str(title)),
+            source_metadata={
+                "openreview": {
+                    "forum_id": forum_id or note_id,
+                    "note_id": note_id,
+                    "keywords": keywords,
+                    "decision": decision,
+                    "review_count": review_count,
+                    "review_signal": review_signal,
+                    "venue": venue,
+                }
+            },
+            raw={"openreview": raw_payload},
+        )
+
+    def _extract_review_signal(self, replies: Sequence[Mapping[str, Any]]) -> tuple[str | None, float | None, int]:
+        decision = None
+        ratings: list[float] = []
+        confidences: list[float] = []
+        review_count = 0
+        for reply in replies:
+            invitation = str(reply.get("invitation", ""))
+            content = reply.get("content") or {}
+            if invitation.endswith("Decision"):
+                decision = _content_value(content, "decision") or decision
+            if invitation.endswith("Official_Review"):
+                review_count += 1
+                rating = _extract_numeric_value(_content_value(content, "rating"))
+                confidence = _extract_numeric_value(_content_value(content, "confidence"))
+                if rating is not None:
+                    ratings.append(rating)
+                if confidence is not None:
+                    confidences.append(confidence)
+        review_signal = None
+        if ratings or confidences:
+            review_signal = (sum(ratings) / len(ratings) if ratings else 0.0) * 8.0
+            if confidences:
+                review_signal += (sum(confidences) / len(confidences)) * 4.0
+            review_signal = min(review_signal, 100.0)
+        return decision, review_signal, review_count
 
 
 class SemanticScholarClient:
@@ -532,12 +1222,12 @@ class SemanticScholarClient:
         self.api_key = api_key
 
     def enrich_title(self, paper: Paper) -> Paper:
-        headers = {"User-Agent": "paper-radar-harness/0.1 (+research scout)"}
+        headers = {"User-Agent": "paper-radar-harness/0.2 (+research scout)"}
         if self.api_key:
             headers["x-api-key"] = self.api_key
         params = {
             "query": paper.title,
-            "fields": "title,year,venue,citationCount,openAccessPdf,externalIds,fieldsOfStudy",
+            "fields": "title,year,venue,citationCount,openAccessPdf,externalIds,fieldsOfStudy,url",
             "sort": "citationCount:desc",
         }
         try:
@@ -556,17 +1246,106 @@ class SemanticScholarClient:
         if not data:
             return paper
         best = data[0]
-        paper.citations = best.get("citationCount")
+        paper.citations = _max_int(paper.citations, best.get("citationCount"))
         paper.venue = paper.venue or best.get("venue")
         fos = best.get("fieldsOfStudy") or []
-        paper.topics = [str(x) for x in fos]
+        paper.topics = list(dict.fromkeys([*paper.topics, *[str(x) for x in fos]]))
         ext = best.get("externalIds") or {}
         if not paper.doi and ext.get("DOI"):
-            paper.doi = ext["DOI"]
+            paper.doi = normalize_doi(ext["DOI"])
         oa_pdf = best.get("openAccessPdf") or {}
         if not paper.pdf_url and oa_pdf.get("url"):
             paper.pdf_url = oa_pdf["url"]
+        paper.source_metadata = merge_source_metadata(
+            paper.source_metadata,
+            {
+                "semanticscholar": {
+                    "citation_count": best.get("citationCount"),
+                    "venue": best.get("venue"),
+                    "fields_of_study": fos,
+                    "url": best.get("url"),
+                }
+            },
+        )
         return paper
+
+
+class OpenAlexClient:
+    def __init__(self, api_key: str | None = None) -> None:
+        self.api_key = api_key
+
+    def enrich(self, paper: Paper) -> Paper:
+        candidate = self._lookup_work(paper)
+        if not candidate:
+            return paper
+
+        paper.citations = _max_int(paper.citations, candidate.get("cited_by_count"))
+        paper.doi = paper.doi or normalize_doi(candidate.get("doi"))
+        primary_location = candidate.get("primary_location") or {}
+        source = primary_location.get("source") or {}
+        paper.venue = paper.venue or source.get("display_name")
+        primary_topic = candidate.get("primary_topic") or {}
+        topics = [primary_topic.get("display_name")] if primary_topic.get("display_name") else []
+        concepts = [
+            concept.get("display_name")
+            for concept in (candidate.get("concepts") or [])
+            if concept.get("display_name")
+        ]
+        paper.topics = list(dict.fromkeys([*paper.topics, *topics, *concepts]))
+        if not paper.pdf_url:
+            open_access = candidate.get("open_access") or {}
+            paper.pdf_url = open_access.get("oa_url") or paper.pdf_url
+        paper.source_metadata = merge_source_metadata(
+            paper.source_metadata,
+            {
+                "openalex": {
+                    "id": candidate.get("id"),
+                    "cited_by_count": candidate.get("cited_by_count"),
+                    "primary_topic": primary_topic.get("display_name"),
+                    "concepts": concepts,
+                    "primary_location": source.get("display_name"),
+                    "oa_status": (candidate.get("open_access") or {}).get("oa_status"),
+                    "is_oa": (candidate.get("open_access") or {}).get("is_oa"),
+                }
+            },
+        )
+        return paper
+
+    def _lookup_work(self, paper: Paper) -> dict[str, Any] | None:
+        for params in self._candidate_queries(paper):
+            payload = self._query(params)
+            results = payload.get("results") or []
+            if results:
+                return results[0]
+        return None
+
+    def _candidate_queries(self, paper: Paper) -> list[dict[str, Any]]:
+        queries: list[dict[str, Any]] = []
+        doi = normalize_doi(paper.doi)
+        if doi:
+            queries.append({"filter": f"doi:{doi}"})
+        arxiv_id = extract_arxiv_id(paper)
+        if arxiv_id:
+            queries.append({"search": arxiv_id})
+        queries.append({"filter": f"title.search:{paper.title}"})
+        queries.append({"search": paper.title})
+        return queries
+
+    def _query(self, params: Mapping[str, Any]) -> dict[str, Any]:
+        headers = {"User-Agent": "paper-radar-harness/0.2 (+research scout)"}
+        if self.api_key:
+            headers["api-key"] = self.api_key
+        query_params = dict(params)
+        query_params.setdefault("per-page", 5)
+        query_params.setdefault("sort", "cited_by_count:desc")
+        try:
+            response = requests.get(OPENALEX_WORKS_API, params=query_params, headers=headers, timeout=30)
+            response.raise_for_status()
+            data = response.json()
+        except (requests.RequestException, ValueError, OSError) as exc:
+            _warn(f"[warn] OpenAlex lookup failed for {params!r}: {exc}")
+            return {}
+        return data
 
 
 class RuleRanker:
@@ -577,13 +1356,15 @@ class RuleRanker:
         self.buckets = rank_options.buckets
 
     def score(self, paper: Paper) -> Paper:
-        text = f"{paper.title} {paper.abstract}".lower()
+        text = _paper_text(paper)
         relevance_hits = sum(1 for kw in self.include_keywords if kw in text)
         exclude_hits = sum(1 for kw in self.exclude_keywords if kw in text)
 
         paper.relevance_score = min(100.0, relevance_hits * 12.5)
         if "cs.ro" in [c.lower() for c in paper.categories]:
             paper.relevance_score = min(100.0, paper.relevance_score + 20.0)
+        if paper.primary_track and paper.primary_track != TRACK_UNASSIGNED:
+            paper.relevance_score = min(100.0, paper.relevance_score + 10.0)
 
         novelty_terms = [
             "we propose",
@@ -598,6 +1379,7 @@ class RuleRanker:
             "world model",
         ]
         paper.novelty_score = min(100.0, sum(10 for term in novelty_terms if term in text))
+
         empirical_terms = [
             "real robot",
             "real-world",
@@ -610,11 +1392,12 @@ class RuleRanker:
             "benchmark",
         ]
         paper.empirical_score = min(100.0, sum(8 for term in empirical_terms if term in text))
-        paper.source_signal_score = 20.0 if paper.source == "arxiv" else 0.0
+
+        paper.source_signal_score = self._source_signal_score(paper, text)
         paper.momentum_score = (
             0.0 if paper.citations is None else min(100.0, math.log1p(paper.citations) * 20.0)
         )
-        paper.recency_score = self._recency_score(paper.published_at)
+        paper.recency_score = self._recency_score(paper.published_at or paper.updated_at)
         paper.actionability_score = min(
             100.0,
             sum(
@@ -628,6 +1411,8 @@ class RuleRanker:
                     "humanoid",
                     "vla",
                     "world model",
+                    "alignment",
+                    "reward model",
                 )
                 if term in text
             ),
@@ -651,6 +1436,25 @@ class RuleRanker:
         paper.bucket = self._bucket(paper.final_score)
         return paper
 
+    def _source_signal_score(self, paper: Paper, text: str) -> float:
+        score = 0.0
+        if paper.source == "arxiv" or "arxiv" in paper.source_metadata:
+            score += 20.0
+        if paper.source == "openreview" or "openreview" in paper.source_metadata:
+            score += 20.0
+        if paper.decision and "accept" in paper.decision.lower():
+            score += 20.0
+        if paper.review_signal is not None:
+            score += min(30.0, paper.review_signal * 0.3)
+        openalex_meta = paper.source_metadata.get("openalex") or {}
+        if openalex_meta.get("is_oa"):
+            score += 5.0
+        if paper.venue:
+            score += 5.0
+        if "benchmark" in text or "dataset" in text:
+            score += 5.0
+        return min(100.0, score)
+
     def _bucket(self, score: float) -> str:
         if score >= self.buckets.get("must_read", 85):
             return "must_read"
@@ -661,31 +1465,428 @@ class RuleRanker:
         return "archive"
 
     def _recency_score(self, published_at: str | None) -> float:
-        if not published_at:
+        pub = _parse_any_datetime(published_at)
+        if not pub:
             return 20.0
-        try:
-            pub = dt.datetime.fromisoformat(published_at.replace("Z", "+00:00"))
-            delta_days = max(0.0, (dt.datetime.now(dt.timezone.utc) - pub).days)
-        except ValueError:
-            return 20.0
+        delta_days = max(0.0, (dt.datetime.now(dt.timezone.utc) - pub).days)
         return max(0.0, 100.0 - delta_days * 3.0)
 
 
-def deduplicate(papers: Iterable[Paper]) -> list[Paper]:
-    seen: set[str] = set()
-    out: list[Paper] = []
-    for paper in papers:
-        key = paper.doi or paper.external_id or paper.normalized_title or normalize_title(paper.title)
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append(paper)
-    return out
+class OpenAIChatClient:
+    def __init__(self, api_key: str, timeout_s: int = 45) -> None:
+        self.api_key = api_key
+        self.timeout_s = timeout_s
+
+    def json_completion(
+        self,
+        *,
+        model: str,
+        system_prompt: str,
+        user_prompt: str,
+    ) -> dict[str, Any]:
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+            "X-Client-Request-Id": hashlib.sha1(user_prompt.encode("utf-8")).hexdigest()[:32],
+        }
+        payload = {
+            "model": model,
+            "temperature": 0.1,
+            "response_format": {"type": "json_object"},
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+        }
+        response = requests.post(
+            OPENAI_CHAT_COMPLETIONS_API,
+            headers=headers,
+            json=payload,
+            timeout=self.timeout_s,
+        )
+        response.raise_for_status()
+        data = response.json()
+        content = (
+            data.get("choices", [{}])[0]
+            .get("message", {})
+            .get("content", "")
+        )
+        if isinstance(content, list):
+            content = "".join(part.get("text", "") for part in content if isinstance(part, dict))
+        if not content:
+            return {}
+        return json.loads(content)
 
 
-def fetch_papers(fetch_options: FetchOptions, pause_s: float = 3.0) -> list[Paper]:
-    collector = ArxivClient(pause_s=pause_s)
+class PaperRadarStore:
+    def __init__(self, db_path: str | Path = DEFAULT_DB_PATH) -> None:
+        self.path = Path(db_path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._initialize()
+
+    def _connect(self) -> sqlite3.Connection:
+        connection = sqlite3.connect(self.path)
+        connection.row_factory = sqlite3.Row
+        return connection
+
+    def _initialize(self) -> None:
+        with self._connect() as connection:
+            connection.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS runs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    config_hash TEXT NOT NULL,
+                    config_path TEXT,
+                    config_json TEXT NOT NULL,
+                    fetch_signature TEXT NOT NULL,
+                    started_at TEXT NOT NULL,
+                    finished_at TEXT,
+                    status TEXT NOT NULL,
+                    total_papers INTEGER DEFAULT 0,
+                    source_status_json TEXT,
+                    daily_digest TEXT,
+                    weekly_digest TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS papers (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    canonical_key TEXT NOT NULL UNIQUE,
+                    source TEXT NOT NULL,
+                    external_id TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    paper_json TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS paper_sources (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    paper_id INTEGER NOT NULL,
+                    source_name TEXT NOT NULL,
+                    source_id TEXT,
+                    source_json TEXT NOT NULL,
+                    UNIQUE(paper_id, source_name, source_id),
+                    FOREIGN KEY(paper_id) REFERENCES papers(id)
+                );
+
+                CREATE TABLE IF NOT EXISTS run_rankings (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    run_id INTEGER NOT NULL,
+                    paper_id INTEGER NOT NULL,
+                    rank_index INTEGER NOT NULL,
+                    final_score REAL NOT NULL,
+                    bucket TEXT,
+                    score_json TEXT NOT NULL,
+                    paper_snapshot TEXT NOT NULL,
+                    FOREIGN KEY(run_id) REFERENCES runs(id),
+                    FOREIGN KEY(paper_id) REFERENCES papers(id)
+                );
+
+                CREATE TABLE IF NOT EXISTS summaries (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    run_id INTEGER NOT NULL,
+                    paper_id INTEGER NOT NULL,
+                    prompt_version TEXT,
+                    model TEXT,
+                    draft_text TEXT,
+                    final_text TEXT,
+                    status TEXT,
+                    summary_json TEXT,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(run_id) REFERENCES runs(id),
+                    FOREIGN KEY(paper_id) REFERENCES papers(id)
+                );
+
+                CREATE TABLE IF NOT EXISTS evaluations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    run_id INTEGER NOT NULL,
+                    paper_id INTEGER NOT NULL,
+                    model TEXT,
+                    verdict TEXT,
+                    status TEXT,
+                    evaluation_json TEXT,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(run_id) REFERENCES runs(id),
+                    FOREIGN KEY(paper_id) REFERENCES papers(id)
+                );
+
+                CREATE TABLE IF NOT EXISTS track_assignments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    run_id INTEGER NOT NULL,
+                    paper_id INTEGER NOT NULL,
+                    track_id TEXT NOT NULL,
+                    is_primary INTEGER NOT NULL,
+                    reason_json TEXT NOT NULL,
+                    FOREIGN KEY(run_id) REFERENCES runs(id),
+                    FOREIGN KEY(paper_id) REFERENCES papers(id)
+                );
+                """
+            )
+
+    def start_run(
+        self,
+        *,
+        config_hash_value: str,
+        config_path: str | None,
+        config: Mapping[str, Any],
+        fetch_signature: str,
+    ) -> int:
+        started_at = dt.datetime.now(dt.timezone.utc).isoformat()
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                INSERT INTO runs (
+                    config_hash, config_path, config_json, fetch_signature, started_at, status
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    config_hash_value,
+                    config_path,
+                    json.dumps(config, ensure_ascii=False, sort_keys=True),
+                    fetch_signature,
+                    started_at,
+                    "running",
+                ),
+            )
+            return int(cursor.lastrowid)
+
+    def finalize_run(
+        self,
+        run_id: int,
+        *,
+        status: str,
+        total_papers: int,
+        source_status: Mapping[str, Any],
+        daily_digest: str = "",
+        weekly_digest: str = "",
+    ) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE runs
+                SET finished_at = ?, status = ?, total_papers = ?, source_status_json = ?, daily_digest = ?, weekly_digest = ?
+                WHERE id = ?
+                """,
+                (
+                    dt.datetime.now(dt.timezone.utc).isoformat(),
+                    status,
+                    total_papers,
+                    json.dumps(source_status, ensure_ascii=False, sort_keys=True),
+                    daily_digest,
+                    weekly_digest,
+                    run_id,
+                ),
+            )
+
+    def persist_ranked_run(self, run_id: int, papers: Sequence[Paper]) -> None:
+        with self._connect() as connection:
+            for index, paper in enumerate(papers, start=1):
+                paper_id = self._upsert_paper(connection, paper)
+                self._upsert_paper_sources(connection, paper_id, paper)
+                connection.execute(
+                    """
+                    INSERT INTO run_rankings (
+                        run_id, paper_id, rank_index, final_score, bucket, score_json, paper_snapshot
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        run_id,
+                        paper_id,
+                        index,
+                        paper.final_score,
+                        paper.bucket,
+                        json.dumps(_score_payload(paper), ensure_ascii=False, sort_keys=True),
+                        json.dumps(asdict(paper), ensure_ascii=False, sort_keys=True),
+                    ),
+                )
+                self._insert_summary(connection, run_id, paper_id, paper)
+                self._insert_evaluation(connection, run_id, paper_id, paper)
+                self._insert_tracks(connection, run_id, paper_id, paper)
+
+    def load_run_papers(self, run_id: int) -> list[Paper]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT paper_snapshot
+                FROM run_rankings
+                WHERE run_id = ?
+                ORDER BY rank_index ASC
+                """,
+                (run_id,),
+            ).fetchall()
+        papers: list[Paper] = []
+        for row in rows:
+            payload = json.loads(row["paper_snapshot"])
+            papers.append(paper_from_dict(payload))
+        return papers
+
+    def get_run(self, run_id: int) -> dict[str, Any] | None:
+        with self._connect() as connection:
+            row = connection.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
+        return dict(row) if row is not None else None
+
+    def list_runs_for_config_hash(self, config_hash_value: str) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT id, config_hash, config_path, fetch_signature, started_at, finished_at, status, total_papers
+                FROM runs
+                WHERE config_hash = ?
+                ORDER BY id DESC
+                """,
+                (config_hash_value,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_latest_run_by_config_hash(self, config_hash_value: str) -> dict[str, Any] | None:
+        runs = self.list_runs_for_config_hash(config_hash_value)
+        return runs[0] if runs else None
+
+    def list_recent_runs(self, limit: int = 20) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT id, config_hash, config_path, fetch_signature, started_at, finished_at, status, total_papers
+                FROM runs
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def _upsert_paper(self, connection: sqlite3.Connection, paper: Paper) -> int:
+        canonical_key = compute_canonical_key(paper)
+        payload = json.dumps(asdict(paper), ensure_ascii=False, sort_keys=True)
+        row = connection.execute(
+            "SELECT id FROM papers WHERE canonical_key = ?",
+            (canonical_key,),
+        ).fetchone()
+        timestamp = dt.datetime.now(dt.timezone.utc).isoformat()
+        if row is None:
+            cursor = connection.execute(
+                """
+                INSERT INTO papers (
+                    canonical_key, source, external_id, title, paper_json, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (canonical_key, paper.source, paper.external_id, paper.title, payload, timestamp),
+            )
+            return int(cursor.lastrowid)
+        paper_id = int(row["id"])
+        connection.execute(
+            """
+            UPDATE papers
+            SET source = ?, external_id = ?, title = ?, paper_json = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (paper.source, paper.external_id, paper.title, payload, timestamp, paper_id),
+        )
+        return paper_id
+
+    def _upsert_paper_sources(self, connection: sqlite3.Connection, paper_id: int, paper: Paper) -> None:
+        source_payloads = dict(paper.source_metadata)
+        if paper.source not in source_payloads:
+            source_payloads[paper.source] = {"external_id": paper.external_id}
+        for source_name, payload in source_payloads.items():
+            source_id = None
+            if isinstance(payload, Mapping):
+                source_id = payload.get("id") or payload.get("external_id") or payload.get("forum_id")
+            connection.execute(
+                """
+                INSERT OR REPLACE INTO paper_sources (paper_id, source_name, source_id, source_json)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    paper_id,
+                    source_name,
+                    str(source_id) if source_id is not None else None,
+                    json.dumps(payload, ensure_ascii=False, sort_keys=True),
+                ),
+            )
+
+    def _insert_summary(self, connection: sqlite3.Connection, run_id: int, paper_id: int, paper: Paper) -> None:
+        if paper.summary_status is None and paper.summary_ko is None:
+            return
+        connection.execute(
+            """
+            INSERT INTO summaries (
+                run_id, paper_id, prompt_version, model, draft_text, final_text, status, summary_json, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                run_id,
+                paper_id,
+                paper.evaluator_notes.get("summary_prompt_id"),
+                paper.evaluator_notes.get("summary_model"),
+                paper.evaluator_notes.get("summary_draft"),
+                paper.summary_ko,
+                paper.summary_status,
+                json.dumps(paper.evaluator_notes.get("summary_json", {}), ensure_ascii=False, sort_keys=True),
+                dt.datetime.now(dt.timezone.utc).isoformat(),
+            ),
+        )
+
+    def _insert_evaluation(self, connection: sqlite3.Connection, run_id: int, paper_id: int, paper: Paper) -> None:
+        if paper.evaluator_status is None and not paper.evaluator_notes:
+            return
+        connection.execute(
+            """
+            INSERT INTO evaluations (
+                run_id, paper_id, model, verdict, status, evaluation_json, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                run_id,
+                paper_id,
+                paper.evaluator_notes.get("evaluator_model"),
+                paper.evaluator_status,
+                paper.evaluator_status,
+                json.dumps(paper.evaluator_notes, ensure_ascii=False, sort_keys=True),
+                dt.datetime.now(dt.timezone.utc).isoformat(),
+            ),
+        )
+
+    def _insert_tracks(self, connection: sqlite3.Connection, run_id: int, paper_id: int, paper: Paper) -> None:
+        if not paper.track_ids:
+            return
+        for track_id in paper.track_ids:
+            reason = paper.track_reasons.get(track_id, [])
+            connection.execute(
+                """
+                INSERT INTO track_assignments (run_id, paper_id, track_id, is_primary, reason_json)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    run_id,
+                    paper_id,
+                    track_id,
+                    1 if track_id == paper.primary_track else 0,
+                    json.dumps(reason, ensure_ascii=False),
+                ),
+            )
+
+
+def collect_openreview(fetch_options: FetchOptions, pause_s: float = 0.5) -> tuple[list[Paper], dict[str, Any]]:
+    if not fetch_options.enable_openreview:
+        return [], {"enabled": False}
+    client = OpenReviewClient(pause_s=pause_s)
+    return client.collect(
+        venues=fetch_options.openreview_venues,
+        keywords=fetch_options.openreview_keywords,
+        days_back=fetch_options.days_back,
+    )
+
+
+def collect_papers(fetch_options: FetchOptions, pause_s: float = 3.0) -> tuple[list[Paper], dict[str, Any]]:
     papers: list[Paper] = []
+    source_status: dict[str, Any] = {"arxiv": {"enabled": True, "queries": {}}, "openreview": {"enabled": False}}
+
+    collector = ArxivClient(pause_s=pause_s)
     for query in fetch_options.queries:
         batch = collector.search(
             query=query,
@@ -694,7 +1895,78 @@ def fetch_papers(fetch_options: FetchOptions, pause_s: float = 3.0) -> list[Pape
             max_results=fetch_options.max_results_per_query,
         )
         papers.extend(batch)
-    return deduplicate(papers)
+        source_status["arxiv"]["queries"][query] = {"count": len(batch)}
+
+    openreview_papers, openreview_status = collect_openreview(fetch_options, pause_s=min(pause_s, 0.5))
+    papers.extend(openreview_papers)
+    source_status["openreview"] = openreview_status
+    return deduplicate(papers), source_status
+
+
+def fetch_papers(fetch_options: FetchOptions, pause_s: float = 3.0) -> list[Paper]:
+    papers, _ = collect_papers(fetch_options, pause_s=pause_s)
+    return papers
+
+
+def enrich_openalex(
+    papers: Iterable[Paper],
+    fetch_options: FetchOptions,
+    env: Mapping[str, str] | None = None,
+    sleep_s: float = 0.2,
+) -> tuple[list[Paper], dict[str, Any]]:
+    cloned = [clone_paper(paper) for paper in papers]
+    if not fetch_options.enable_openalex:
+        return cloned, {"enabled": False}
+
+    env_map = os.environ if env is None else env
+    api_key = env_map.get(fetch_options.openalex_api_key_env)
+    client = OpenAlexClient(api_key=api_key)
+    enriched: list[Paper] = []
+    success_count = 0
+    for paper in cloned:
+        before = json.dumps(paper.source_metadata.get("openalex"), sort_keys=True, ensure_ascii=False)
+        paper = client.enrich(paper)
+        after = json.dumps(paper.source_metadata.get("openalex"), sort_keys=True, ensure_ascii=False)
+        if after != before and paper.source_metadata.get("openalex"):
+            success_count += 1
+        enriched.append(paper)
+        time.sleep(sleep_s)
+    return enriched, {"enabled": True, "enriched": success_count}
+
+
+def enrich_papers_with_status(
+    papers: Iterable[Paper],
+    fetch_options: FetchOptions,
+    env: Mapping[str, str] | None = None,
+    sleep_s: float = 0.5,
+) -> tuple[list[Paper], dict[str, Any]]:
+    cloned = [clone_paper(paper) for paper in papers]
+    status: dict[str, Any] = {
+        "semanticscholar": {"enabled": False},
+        "openalex": {"enabled": False},
+    }
+
+    if fetch_options.enable_semanticscholar:
+        env_map = os.environ if env is None else env
+        api_key = env_map.get(fetch_options.semanticscholar_api_key_env)
+        client = SemanticScholarClient(api_key=api_key)
+        enriched: list[Paper] = []
+        success_count = 0
+        for idx, paper in enumerate(cloned):
+            before = json.dumps(paper.source_metadata.get("semanticscholar"), sort_keys=True, ensure_ascii=False)
+            if idx < 40:
+                paper = client.enrich_title(paper)
+                time.sleep(sleep_s)
+            after = json.dumps(paper.source_metadata.get("semanticscholar"), sort_keys=True, ensure_ascii=False)
+            if before != after and paper.source_metadata.get("semanticscholar"):
+                success_count += 1
+            enriched.append(paper)
+        cloned = enriched
+        status["semanticscholar"] = {"enabled": True, "enriched": success_count}
+
+    cloned, openalex_status = enrich_openalex(cloned, fetch_options, env=env, sleep_s=min(sleep_s, 0.2))
+    status["openalex"] = openalex_status
+    return deduplicate(cloned), status
 
 
 def enrich_papers(
@@ -703,21 +1975,43 @@ def enrich_papers(
     env: Mapping[str, str] | None = None,
     sleep_s: float = 0.5,
 ) -> list[Paper]:
-    cloned = [clone_paper(paper) for paper in papers]
-    if not fetch_options.enable_semanticscholar:
-        return cloned
-
-    env_map = os.environ if env is None else env
-    api_key = env_map.get(fetch_options.semanticscholar_api_key_env)
-    client = SemanticScholarClient(api_key=api_key)
-
-    enriched: list[Paper] = []
-    for idx, paper in enumerate(cloned):
-        if idx < 20:
-            paper = client.enrich_title(paper)
-            time.sleep(sleep_s)
-        enriched.append(paper)
+    enriched, _ = enrich_papers_with_status(papers, fetch_options, env=env, sleep_s=sleep_s)
     return enriched
+
+
+def assign_tracks(papers: Iterable[Paper], digest_options: DigestOptions) -> list[Paper]:
+    assigned: list[Paper] = []
+    ordered_tracks = list(digest_options.tracks)
+    track_definitions = digest_options.track_definitions
+    if TRACK_UNASSIGNED not in ordered_tracks:
+        ordered_tracks = [*ordered_tracks, TRACK_UNASSIGNED]
+
+    for paper in papers:
+        candidate = clone_paper(paper)
+        text = _paper_text(candidate)
+        matches: list[str] = []
+        reasons: dict[str, list[str]] = {}
+
+        for track_id in ordered_tracks:
+            definition = track_definitions.get(track_id, {"label": track_id, "keywords": []})
+            keywords = parse_keywords_input(definition.get("keywords", []))
+            if not keywords:
+                continue
+            hits = [keyword for keyword in keywords if keyword in text]
+            if hits:
+                matches.append(track_id)
+                reasons[track_id] = hits
+
+        if not matches:
+            matches = [TRACK_UNASSIGNED]
+            reasons[TRACK_UNASSIGNED] = []
+
+        primary = next((track_id for track_id in ordered_tracks if track_id in matches), matches[0])
+        candidate.track_ids = matches
+        candidate.primary_track = primary
+        candidate.track_reasons = reasons
+        assigned.append(candidate)
+    return assigned
 
 
 def rank_papers(papers: Iterable[Paper], rank_options: RankOptions) -> list[Paper]:
@@ -726,29 +2020,627 @@ def rank_papers(papers: Iterable[Paper], rank_options: RankOptions) -> list[Pape
     return sorted(ranked, key=lambda paper: paper.final_score, reverse=True)
 
 
+def summarize_top_papers(
+    papers: Iterable[Paper],
+    llm_options: LLMOptions,
+    env: Mapping[str, str] | None = None,
+) -> list[Paper]:
+    ranked = [clone_paper(paper) for paper in papers]
+    if not llm_options.enabled:
+        for paper in ranked:
+            if paper.summary_status is None:
+                paper.summary_status = "disabled"
+            if paper.evaluator_status is None:
+                paper.evaluator_status = "disabled"
+        return ranked
+    if llm_options.provider.lower() != "openai":
+        _warn(f"[warn] Unsupported LLM provider: {llm_options.provider}")
+        return ranked
+
+    env_map = os.environ if env is None else env
+    api_key = env_map.get(llm_options.api_key_env)
+    if not api_key:
+        _warn(f"[warn] {llm_options.api_key_env} is not set. Skipping summary/evaluator.")
+        for paper in ranked:
+            paper.summary_status = "missing_api_key"
+            paper.evaluator_status = "missing_api_key"
+        return ranked
+
+    prompt_bundle = load_prompt_bundle(llm_options.prompts_path)
+    client = OpenAIChatClient(api_key=api_key, timeout_s=llm_options.timeout_s)
+    target_count = max(0, min(llm_options.summary_top_n, len(ranked)))
+    indexed_papers = list(enumerate(ranked[:target_count]))
+
+    def worker(item: tuple[int, Paper]) -> tuple[int, Paper]:
+        idx, paper = item
+        return idx, _summarize_and_evaluate_paper(paper, llm_options, prompt_bundle, client)
+
+    if not indexed_papers:
+        return ranked
+
+    max_workers = max(1, min(llm_options.max_concurrency, len(indexed_papers)))
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            for idx, paper in executor.map(worker, indexed_papers):
+                ranked[idx] = paper
+    except Exception as exc:
+        _warn(f"[warn] Summary/evaluator batch failed: {exc}")
+    for paper in ranked[target_count:]:
+        if paper.summary_status is None:
+            paper.summary_status = "skipped_top_n"
+        if paper.evaluator_status is None:
+            paper.evaluator_status = "skipped_top_n"
+    return ranked
+
+
+def _summarize_and_evaluate_paper(
+    paper: Paper,
+    llm_options: LLMOptions,
+    prompt_bundle: Mapping[str, Any],
+    client: OpenAIChatClient,
+) -> Paper:
+    summary_prompt = prompt_bundle.get(llm_options.summary_prompt_id) or BUILTIN_PROMPTS["daily_radar_ko"]
+    evaluator_prompt = prompt_bundle.get(llm_options.evaluator_prompt_id) or BUILTIN_PROMPTS["evaluator_ko"]
+    evidence = {
+        "venue": paper.venue,
+        "topics": paper.topics,
+        "citations": paper.citations,
+        "decision": paper.decision,
+        "review_signal": paper.review_signal,
+        "tracks": paper.track_ids,
+    }
+    metadata_text = json.dumps(evidence, ensure_ascii=False, sort_keys=True)
+
+    try:
+        summary_json = client.json_completion(
+            model=llm_options.model_summary,
+            system_prompt=str(summary_prompt.get("system", BUILTIN_PROMPTS["daily_radar_ko"]["system"])),
+            user_prompt=str(summary_prompt.get("user_template", BUILTIN_PROMPTS["daily_radar_ko"]["user_template"])).format(
+                title=paper.title,
+                abstract=paper.abstract,
+                categories=", ".join(paper.categories),
+                metadata=metadata_text,
+            ),
+        )
+        draft_text = _render_summary(summary_json)
+        paper.summary_status = "complete"
+        paper.summary_ko = draft_text
+        paper.evaluator_notes["summary_json"] = summary_json
+        paper.evaluator_notes["summary_draft"] = draft_text
+        paper.evaluator_notes["summary_model"] = llm_options.model_summary
+        paper.evaluator_notes["summary_prompt_id"] = llm_options.summary_prompt_id
+    except Exception as exc:
+        _warn(f"[warn] Summary generation failed for {paper.title!r}: {exc}")
+        paper.summary_status = "error"
+        paper.evaluator_status = "skipped_due_to_summary_error"
+        paper.evaluator_notes["summary_error"] = str(exc)
+        return paper
+
+    try:
+        evaluation_json = client.json_completion(
+            model=llm_options.model_evaluator,
+            system_prompt=str(
+                evaluator_prompt.get("system", BUILTIN_PROMPTS["evaluator_ko"]["system"])
+            ),
+            user_prompt=str(
+                evaluator_prompt.get("user_template", BUILTIN_PROMPTS["evaluator_ko"]["user_template"])
+            ).format(
+                title=paper.title,
+                abstract=paper.abstract,
+                evidence=metadata_text,
+                draft=draft_text,
+            ),
+        )
+    except Exception as exc:
+        _warn(f"[warn] Summary evaluator failed for {paper.title!r}: {exc}")
+        paper.evaluator_status = "error"
+        paper.evaluator_notes["evaluation_error"] = str(exc)
+        return paper
+
+    verdict = str(evaluation_json.get("verdict", "revise")).lower()
+    notes = {
+        "unsupported_claims": evaluation_json.get("unsupported_claims") or [],
+        "novelty_overclaim": bool(evaluation_json.get("novelty_overclaim", False)),
+        "simulation_vs_real_error": bool(evaluation_json.get("simulation_vs_real_error", False)),
+        "baseline_ablation_issue": bool(evaluation_json.get("baseline_ablation_issue", False)),
+        "notes": evaluation_json.get("notes") or "",
+        "revised_summary": evaluation_json.get("revised_summary") or "",
+        "evaluator_model": llm_options.model_evaluator,
+        "evaluator_prompt_id": llm_options.evaluator_prompt_id,
+    }
+    paper.evaluator_notes.update(notes)
+    if verdict not in {"pass", "revise", "fail"}:
+        verdict = "revise"
+    paper.evaluator_status = verdict
+    if verdict in {"revise", "fail"} and notes["revised_summary"]:
+        paper.summary_ko = str(notes["revised_summary"])
+    return paper
+
+
+def build_track_digest(
+    papers: Sequence[Paper],
+    digest_options: DigestOptions,
+    *,
+    exclude_failed: bool = True,
+) -> TrackDigest:
+    ranked = sorted([clone_paper(paper) for paper in papers], key=lambda item: item.final_score, reverse=True)
+    if exclude_failed:
+        filtered = [
+            paper
+            for paper in ranked
+            if paper.evaluator_status not in {"fail"} and paper.summary_status not in {"error"}
+        ]
+        if filtered:
+            ranked = filtered
+
+    ordered_tracks = [track for track in digest_options.tracks if track]
+    if TRACK_UNASSIGNED not in ordered_tracks:
+        ordered_tracks.append(TRACK_UNASSIGNED)
+
+    top_papers = ranked[: digest_options.daily_top_k]
+    daily_sections: list[dict[str, Any]] = []
+    weekly_sections: list[dict[str, Any]] = []
+    daily_lines = ["# Daily Paper Radar", ""]
+    daily_lines.append("## Overall Top Picks")
+    for idx, paper in enumerate(top_papers, start=1):
+        daily_lines.extend(_digest_paper_lines(idx, paper))
+    daily_lines.append("")
+
+    for track_id in ordered_tracks:
+        track_papers = [paper for paper in ranked if track_id in paper.track_ids]
+        if not track_papers:
+            continue
+        preview = track_papers[: min(3, len(track_papers))]
+        label = digest_options.track_definitions.get(track_id, {}).get("label", track_id)
+        daily_lines.append(f"## {label}")
+        daily_section = {"track_id": track_id, "label": label, "papers": preview}
+        for idx, paper in enumerate(preview, start=1):
+            daily_lines.append(
+                f"- {idx}. {paper.title} ({paper.final_score:.2f}, {paper.bucket}, {paper.primary_track})"
+            )
+        daily_lines.append("")
+        daily_sections.append(daily_section)
+
+    weekly_lines = ["# Weekly Track Digest", ""]
+    for track_id in ordered_tracks:
+        track_papers = [paper for paper in ranked if paper.primary_track == track_id]
+        if not track_papers:
+            continue
+        label = digest_options.track_definitions.get(track_id, {}).get("label", track_id)
+        weekly_lines.append(f"## {label}")
+        weekly_section = {"track_id": track_id, "label": label, "papers": []}
+        for idx, paper in enumerate(track_papers[: digest_options.weekly_top_k_per_track], start=1):
+            weekly_lines.extend(_digest_paper_lines(idx, paper))
+            secondary = [track for track in paper.track_ids if track != track_id]
+            if secondary:
+                weekly_lines.append(f"- Secondary tracks: {', '.join(secondary)}")
+            weekly_lines.append("")
+            weekly_section["papers"].append(paper)
+        weekly_sections.append(weekly_section)
+
+    return TrackDigest(
+        daily_markdown="\n".join(daily_lines).strip() + "\n",
+        weekly_markdown="\n".join(weekly_lines).strip() + "\n",
+        daily_sections=daily_sections,
+        weekly_sections=weekly_sections,
+    )
+
+
 def build_markdown_digest(papers: list[Paper], top_k: int = 8) -> str:
-    selected = sorted(papers, key=lambda paper: paper.final_score, reverse=True)[:top_k]
-    lines = ["# Daily Paper Radar", ""]
-    for idx, paper in enumerate(selected, 1):
-        lines.append(f"## {idx}. {paper.title}")
-        lines.append(f"- Source: {paper.source}")
-        lines.append(f"- URL: {paper.url}")
-        lines.append(f"- Categories: {', '.join(paper.categories)}")
-        lines.append(f"- Score: {paper.final_score} ({paper.bucket})")
-        lines.append(f"- Abstract: {paper.abstract[:700]}...")
-        lines.append("")
-    return "\n".join(lines)
+    digest_options = DigestOptions(
+        daily_top_k=top_k,
+        weekly_top_k_per_track=max(1, min(top_k, 5)),
+        tracks=[paper.primary_track for paper in papers if paper.primary_track] or [TRACK_UNASSIGNED],
+        track_definitions=copy.deepcopy(BUILTIN_TRACK_DEFINITIONS),
+    )
+    return build_track_digest(papers, digest_options).daily_markdown
 
 
-def export_results(papers: list[Paper], out_dir: str | Path, top_k: int) -> None:
+def export_results(
+    papers: list[Paper],
+    out_dir: str | Path,
+    top_k: int,
+    digest_options: DigestOptions | None = None,
+) -> None:
     target_dir = Path(out_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
-    digest = build_markdown_digest(papers, top_k=top_k)
-    (target_dir / "daily_radar.md").write_text(digest, encoding="utf-8")
+    if digest_options is None:
+        digest_options = DigestOptions(
+            daily_top_k=top_k,
+            weekly_top_k_per_track=max(1, min(top_k, 5)),
+            tracks=[paper.primary_track for paper in papers if paper.primary_track] or [TRACK_UNASSIGNED],
+            track_definitions=copy.deepcopy(BUILTIN_TRACK_DEFINITIONS),
+        )
+    digest_options = copy.deepcopy(digest_options)
+    digest_options.daily_top_k = top_k
+    track_digest = build_track_digest(papers, digest_options)
+    (target_dir / "daily_radar.md").write_text(track_digest.daily_markdown, encoding="utf-8")
+    (target_dir / "weekly_track_digest.md").write_text(track_digest.weekly_markdown, encoding="utf-8")
     (target_dir / "papers.jsonl").write_text(
         "\n".join(json.dumps(asdict(paper), ensure_ascii=False) for paper in papers),
         encoding="utf-8",
     )
+
+
+def execute_pipeline(
+    config: Mapping[str, Any],
+    *,
+    config_path: str | Path | None = None,
+    env: Mapping[str, str] | None = None,
+    store_path: str | Path = DEFAULT_DB_PATH,
+    out_dir: str | Path = "data",
+    persist: bool = True,
+    export: bool = True,
+    pause_s: float = 3.0,
+    sleep_s: float = 0.1,
+) -> RunExecution:
+    fetch_options = build_fetch_options_from_config(config)
+    rank_options = build_rank_options_from_config(config)
+    llm_options = build_llm_options_from_config(config, config_path=config_path)
+    digest_options = build_digest_options_from_config(config)
+    config_hash_value = config_hash(config)
+    fetch_signature = fetch_options_signature(fetch_options)
+
+    store = PaperRadarStore(store_path) if persist else None
+    run_id = None
+    if store is not None:
+        run_id = store.start_run(
+            config_hash_value=config_hash_value,
+            config_path=str(config_path) if config_path is not None else None,
+            config=config,
+            fetch_signature=fetch_signature,
+        )
+
+    source_status: dict[str, Any] = {}
+    try:
+        fetched, collect_status = collect_papers(fetch_options, pause_s=pause_s)
+        source_status.update(collect_status)
+        enriched, enrich_status = enrich_papers_with_status(fetched, fetch_options, env=env, sleep_s=sleep_s)
+        source_status.update(enrich_status)
+        tracked = assign_tracks(enriched, digest_options)
+        ranked = rank_papers(tracked, rank_options)
+        ranked = summarize_top_papers(ranked, llm_options, env=env)
+        track_digest = build_track_digest(ranked, digest_options)
+        if store is not None and run_id is not None:
+            store.persist_ranked_run(run_id, ranked)
+            store.finalize_run(
+                run_id,
+                status="completed",
+                total_papers=len(ranked),
+                source_status=source_status,
+                daily_digest=track_digest.daily_markdown,
+                weekly_digest=track_digest.weekly_markdown,
+            )
+        if export:
+            export_results(ranked, out_dir, top_k=rank_options.daily_top_k, digest_options=digest_options)
+        return RunExecution(
+            run_id=run_id,
+            config_hash=config_hash_value,
+            fetch_signature=fetch_signature,
+            raw_papers=enriched,
+            ranked_papers=ranked,
+            source_status=source_status,
+            daily_digest=track_digest.daily_markdown,
+            weekly_digest=track_digest.weekly_markdown,
+        )
+    except Exception:
+        if store is not None and run_id is not None:
+            store.finalize_run(
+                run_id,
+                status="failed",
+                total_papers=0,
+                source_status=source_status,
+            )
+        raise
+
+
+def run_radar(
+    config_path: str | Path,
+    *,
+    env: Mapping[str, str] | None = None,
+    store_path: str | Path = DEFAULT_DB_PATH,
+    out_dir: str | Path = "data",
+    persist: bool = True,
+    export: bool = True,
+) -> RunExecution:
+    config = load_config(config_path)
+    return execute_pipeline(
+        config,
+        config_path=config_path,
+        env=env,
+        store_path=store_path,
+        out_dir=out_dir,
+        persist=persist,
+        export=export,
+    )
+
+
+def diff_configs(config_a: Mapping[str, Any], config_b: Mapping[str, Any]) -> dict[str, Any]:
+    fetch_a = build_fetch_options_from_config(config_a)
+    fetch_b = build_fetch_options_from_config(config_b)
+    rank_a = build_rank_options_from_config(config_a)
+    rank_b = build_rank_options_from_config(config_b)
+    digest_a = build_digest_options_from_config(config_a)
+    digest_b = build_digest_options_from_config(config_b)
+
+    return {
+        "fetch": {
+            "queries_only_in_a": sorted(set(fetch_a.queries) - set(fetch_b.queries)),
+            "queries_only_in_b": sorted(set(fetch_b.queries) - set(fetch_a.queries)),
+            "categories_only_in_a": sorted(set(fetch_a.categories) - set(fetch_b.categories)),
+            "categories_only_in_b": sorted(set(fetch_b.categories) - set(fetch_a.categories)),
+            "days_back": {"a": fetch_a.days_back, "b": fetch_b.days_back},
+            "openreview_venues_only_in_a": sorted(set(fetch_a.openreview_venues) - set(fetch_b.openreview_venues)),
+            "openreview_venues_only_in_b": sorted(set(fetch_b.openreview_venues) - set(fetch_a.openreview_venues)),
+        },
+        "keywords": {
+            "include_only_in_a": sorted(set(rank_a.include_keywords) - set(rank_b.include_keywords)),
+            "include_only_in_b": sorted(set(rank_b.include_keywords) - set(rank_a.include_keywords)),
+            "exclude_only_in_a": sorted(set(rank_a.exclude_keywords) - set(rank_b.exclude_keywords)),
+            "exclude_only_in_b": sorted(set(rank_b.exclude_keywords) - set(rank_a.exclude_keywords)),
+        },
+        "weights": {
+            key: {"a": round(rank_a.weights.get(key, 0.0), 6), "b": round(rank_b.weights.get(key, 0.0), 6)}
+            for key in WEIGHT_KEYS
+            if not math.isclose(rank_a.weights.get(key, 0.0), rank_b.weights.get(key, 0.0), abs_tol=1e-9)
+        },
+        "buckets": {
+            key: {"a": rank_a.buckets.get(key), "b": rank_b.buckets.get(key)}
+            for key in BUCKET_KEYS
+            if not math.isclose(rank_a.buckets.get(key, 0.0), rank_b.buckets.get(key, 0.0), abs_tol=1e-9)
+        },
+        "digest": {
+            "tracks_only_in_a": sorted(set(digest_a.tracks) - set(digest_b.tracks)),
+            "tracks_only_in_b": sorted(set(digest_b.tracks) - set(digest_a.tracks)),
+            "track_definitions_changed": sorted(
+                track_id
+                for track_id in set(digest_a.track_definitions) | set(digest_b.track_definitions)
+                if digest_a.track_definitions.get(track_id) != digest_b.track_definitions.get(track_id)
+            ),
+        },
+    }
+
+
+def compare_presets(
+    preset_a_path: str | Path,
+    preset_b_path: str | Path,
+    *,
+    store_path: str | Path = DEFAULT_DB_PATH,
+    run_a_id: int | None = None,
+    run_b_id: int | None = None,
+) -> dict[str, Any]:
+    config_a = load_config(preset_a_path)
+    config_b = load_config(preset_b_path)
+    store = PaperRadarStore(store_path)
+    config_hash_a = config_hash(config_a)
+    config_hash_b = config_hash(config_b)
+    fetch_options_a = build_fetch_options_from_config(config_a)
+    fetch_options_b = build_fetch_options_from_config(config_b)
+    fetch_signature_a = fetch_options_signature(fetch_options_a)
+    fetch_signature_b = fetch_options_signature(fetch_options_b)
+
+    run_info_a = store.get_run(run_a_id) if run_a_id is not None else store.get_latest_run_by_config_hash(config_hash_a)
+    run_info_b = store.get_run(run_b_id) if run_b_id is not None else store.get_latest_run_by_config_hash(config_hash_b)
+
+    comparison: dict[str, Any] = {
+        "config_diff": diff_configs(config_a, config_b),
+        "raw_corpus_differs": fetch_signature_a != fetch_signature_b,
+        "run_a": run_info_a,
+        "run_b": run_info_b,
+        "results": None,
+    }
+
+    papers_a: list[Paper] = []
+    papers_b: list[Paper] = []
+
+    if fetch_signature_a == fetch_signature_b:
+        candidate_runs = [run for run in (run_info_a, run_info_b) if run is not None]
+        if candidate_runs:
+            base_run = max(candidate_runs, key=lambda run: run["id"])
+            base_papers = store.load_run_papers(int(base_run["id"]))
+            tracked_a = assign_tracks(base_papers, build_digest_options_from_config(config_a))
+            tracked_b = assign_tracks(base_papers, build_digest_options_from_config(config_b))
+            papers_a = rank_papers(tracked_a, build_rank_options_from_config(config_a))
+            papers_b = rank_papers(tracked_b, build_rank_options_from_config(config_b))
+            comparison["raw_corpus_differs"] = False
+    else:
+        if run_info_a is not None:
+            papers_a = store.load_run_papers(int(run_info_a["id"]))
+        if run_info_b is not None:
+            papers_b = store.load_run_papers(int(run_info_b["id"]))
+
+    if papers_a and papers_b:
+        comparison["results"] = compare_ranked_lists(papers_a, papers_b)
+    return comparison
+
+
+def compare_ranked_lists(papers_a: Sequence[Paper], papers_b: Sequence[Paper], top_n: int = 10) -> dict[str, Any]:
+    top_a = list(papers_a[:top_n])
+    top_b = list(papers_b[:top_n])
+    key_to_rank_a = {_comparison_key(paper): idx + 1 for idx, paper in enumerate(papers_a)}
+    key_to_rank_b = {_comparison_key(paper): idx + 1 for idx, paper in enumerate(papers_b)}
+    top_keys_a = {_comparison_key(paper) for paper in top_a}
+    top_keys_b = {_comparison_key(paper) for paper in top_b}
+    overlap_keys = top_keys_a & top_keys_b
+
+    deltas: list[dict[str, Any]] = []
+    all_keys = list(dict.fromkeys([*key_to_rank_a.keys(), *key_to_rank_b.keys()]))
+    for key in all_keys:
+        paper_a = next((paper for paper in papers_a if _comparison_key(paper) == key), None)
+        paper_b = next((paper for paper in papers_b if _comparison_key(paper) == key), None)
+        deltas.append(
+            {
+                "key": key,
+                "title": (paper_a or paper_b).title if (paper_a or paper_b) else key,
+                "rank_a": key_to_rank_a.get(key),
+                "rank_b": key_to_rank_b.get(key),
+                "rank_delta": _delta_or_none(key_to_rank_a.get(key), key_to_rank_b.get(key)),
+                "score_a": paper_a.final_score if paper_a else None,
+                "score_b": paper_b.final_score if paper_b else None,
+                "score_delta": _float_delta(
+                    paper_a.final_score if paper_a else None,
+                    paper_b.final_score if paper_b else None,
+                ),
+                "bucket_a": paper_a.bucket if paper_a else None,
+                "bucket_b": paper_b.bucket if paper_b else None,
+                "primary_track_a": paper_a.primary_track if paper_a else None,
+                "primary_track_b": paper_b.primary_track if paper_b else None,
+            }
+        )
+
+    deltas.sort(key=lambda item: (item["rank_a"] or 9999, item["rank_b"] or 9999, item["title"]))
+    return {
+        "top_n": top_n,
+        "top_overlap": len(overlap_keys),
+        "only_in_a": [paper.title for paper in top_a if _comparison_key(paper) not in top_keys_b],
+        "only_in_b": [paper.title for paper in top_b if _comparison_key(paper) not in top_keys_a],
+        "deltas": deltas,
+    }
+
+
+def _comparison_key(paper: Paper) -> str:
+    return paper.canonical_id or compute_canonical_key(paper)
+
+
+def _delta_or_none(left: int | None, right: int | None) -> int | None:
+    if left is None or right is None:
+        return None
+    return right - left
+
+
+def _float_delta(left: float | None, right: float | None) -> float | None:
+    if left is None or right is None:
+        return None
+    return round(right - left, 2)
+
+
+def _score_payload(paper: Paper) -> dict[str, Any]:
+    return {
+        "relevance": paper.relevance_score,
+        "novelty": paper.novelty_score,
+        "empirical": paper.empirical_score,
+        "source_signal": paper.source_signal_score,
+        "momentum": paper.momentum_score,
+        "recency": paper.recency_score,
+        "actionability": paper.actionability_score,
+        "final": paper.final_score,
+        "bucket": paper.bucket,
+    }
+
+
+def _paper_text(paper: Paper) -> str:
+    parts = [
+        paper.title,
+        paper.abstract,
+        " ".join(paper.categories),
+        " ".join(paper.topics),
+        paper.venue or "",
+        paper.decision or "",
+        " ".join(paper.track_ids),
+        json.dumps(paper.source_metadata, ensure_ascii=False, sort_keys=True),
+    ]
+    return " ".join(part for part in parts if part).lower()
+
+
+def _render_summary(summary_json: Mapping[str, Any]) -> str:
+    fields = [
+        ("한줄 요약", summary_json.get("summary")),
+        ("왜 중요한가", summary_json.get("why_it_matters")),
+        ("방법", summary_json.get("method")),
+        ("실험/결과", summary_json.get("setup_results")),
+        ("robotics 관련성", summary_json.get("robotics_relevance")),
+        ("한계", summary_json.get("limitations")),
+        ("관심도", summary_json.get("interest_score")),
+        ("추천 액션", summary_json.get("recommended_action")),
+    ]
+    lines = []
+    for label, value in fields:
+        if value in (None, "", []):
+            continue
+        lines.append(f"- {label}: {value}")
+    return "\n".join(lines).strip()
+
+
+def _digest_paper_lines(idx: int, paper: Paper) -> list[str]:
+    lines = [f"### {idx}. {paper.title}"]
+    lines.append(f"- Score: {paper.final_score:.2f} ({paper.bucket})")
+    lines.append(f"- Source: {paper.source}")
+    lines.append(f"- Track: {paper.primary_track or '-'}")
+    if paper.venue:
+        lines.append(f"- Venue: {paper.venue}")
+    if paper.decision:
+        lines.append(f"- Decision: {paper.decision}")
+    if paper.summary_ko:
+        lines.append("- Summary:")
+        lines.append(paper.summary_ko)
+    else:
+        lines.append(f"- Abstract: {paper.abstract[:500]}...")
+    lines.append(f"- URL: {paper.url}")
+    return lines
+
+
+def _content_value(content: Mapping[str, Any], key: str) -> Any:
+    if key not in content:
+        return None
+    value = content.get(key)
+    if isinstance(value, Mapping):
+        return value.get("value")
+    return value
+
+
+def _normalize_author_list(value: Any) -> list[str]:
+    if not value:
+        return []
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, Sequence):
+        return [str(item).strip() for item in value if str(item).strip()]
+    return [str(value).strip()]
+
+
+def _normalize_string_list(value: Any) -> list[str]:
+    if not value:
+        return []
+    if isinstance(value, str):
+        return parse_keywords_input(value)
+    if isinstance(value, Sequence):
+        return [str(item).strip() for item in value if str(item).strip()]
+    return [str(value).strip()]
+
+
+def _extract_numeric_value(value: Any) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value)
+    match = re.search(r"([0-9]+(?:\.[0-9]+)?)", text)
+    return float(match.group(1)) if match else None
+
+
+def _ms_to_iso(value: Any) -> str | None:
+    if value in (None, "", 0):
+        return None
+    try:
+        timestamp_ms = int(value)
+    except (TypeError, ValueError):
+        return None
+    return dt.datetime.fromtimestamp(timestamp_ms / 1000, tz=dt.timezone.utc).isoformat().replace(
+        "+00:00", "Z"
+    )
+
+
+def _parse_any_datetime(value: str | None) -> dt.datetime | None:
+    if not value:
+        return None
+    text = str(value).strip()
+    try:
+        return dt.datetime.fromisoformat(text.replace("Z", "+00:00")).astimezone(dt.timezone.utc)
+    except ValueError:
+        try:
+            return dt.datetime.strptime(text, "%Y-%m-%d").replace(tzinfo=dt.timezone.utc)
+        except ValueError:
+            return None
 
 
 def _clean(text: str) -> str:

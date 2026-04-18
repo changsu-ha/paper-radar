@@ -75,3 +75,16 @@ digest:
   - humanoid
   - world_model
   - supporting_ml
+  track_definitions: {}
+llm:
+  enabled: false
+  provider: openai
+  model_summary: gpt-4o-mini
+  model_evaluator: gpt-4o-mini
+  summary_top_n: 5
+  prompts_path: paper_radar_prompts.example.yaml
+  summary_prompt_id: daily_radar_ko
+  evaluator_prompt_id: evaluator_ko
+  max_concurrency: 2
+  timeout_s: 45
+  api_key_env: OPENAI_API_KEY

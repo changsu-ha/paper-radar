@@ -10,15 +10,27 @@ from paper_radar_core import (
     _warn,
     ArxivClient,
     BUCKET_KEYS,
-    WEIGHT_KEYS,
+    DEFAULT_DB_PATH,
+    DigestOptions,
     FetchOptions,
+    LLMOptions,
     Paper,
+    PaperRadarStore,
     RankOptions,
+    WEIGHT_KEYS,
+    assign_tracks,
     build_config_from_options,
     build_fetch_options_from_config,
     build_rank_options_from_config,
+    build_track_digest,
+    collect_openreview,
+    compare_presets,
+    config_hash,
+    enrich_openalex,
     enrich_papers,
+    execute_pipeline,
     export_results,
+    fetch_options_signature,
     fetch_papers,
     get_config_path,
     load_config,
@@ -26,6 +38,7 @@ from paper_radar_core import (
     parse_keywords_input,
     rank_papers,
     save_config,
+    summarize_top_papers,
 )
 
 
@@ -49,6 +62,17 @@ class PaperRadarCoreTests(unittest.TestCase):
                 "skim": 55.0,
             },
             daily_top_k=8,
+        )
+        self.digest_options = DigestOptions(
+            daily_top_k=4,
+            weekly_top_k_per_track=2,
+            tracks=["manipulation", "world_model", "supporting_ml"],
+            track_definitions={
+                "manipulation": {"label": "Manipulation", "keywords": ["manipulation", "grasp", "dexterous"]},
+                "world_model": {"label": "World Model", "keywords": ["world model", "planning"]},
+                "supporting_ml": {"label": "Supporting ML", "keywords": ["dataset", "benchmark"]},
+                "unassigned": {"label": "Unassigned", "keywords": []},
+            },
         )
 
     def test_days_back_filters_results_and_stops_on_old_page(self) -> None:
@@ -109,7 +133,7 @@ class PaperRadarCoreTests(unittest.TestCase):
         self.assertAlmostEqual(raw_sum, 2.0, places=6)
         self.assertTrue(used_normalization)
 
-    def test_preset_roundtrip_preserves_config_shape(self) -> None:
+    def test_preset_roundtrip_preserves_v2_config_shape(self) -> None:
         base_config = load_config("paper_radar_config.example.yaml")
         fetch_options = FetchOptions(
             queries=["robot learning", "humanoid"],
@@ -117,6 +141,10 @@ class PaperRadarCoreTests(unittest.TestCase):
             days_back=14,
             max_results_per_query=25,
             enable_semanticscholar=True,
+            enable_openreview=True,
+            openreview_venues=["ICLR.cc/2026/Conference"],
+            openreview_keywords=["robot learning"],
+            enable_openalex=True,
         )
         rank_options = RankOptions(
             include_keywords=parse_keywords_input("robot, humanoid, policy"),
@@ -125,7 +153,18 @@ class PaperRadarCoreTests(unittest.TestCase):
             buckets={key: float(base_config["ranking"]["buckets"][key]) for key in BUCKET_KEYS},
             daily_top_k=5,
         )
-        built = build_config_from_options(base_config, fetch_options, rank_options)
+        llm_options = LLMOptions(enabled=True, summary_top_n=3)
+        digest_options = DigestOptions(
+            daily_top_k=5,
+            weekly_top_k_per_track=2,
+            tracks=["manipulation", "world_model"],
+            track_definitions={
+                "manipulation": {"label": "Manipulation", "keywords": ["manipulation"]},
+                "world_model": {"label": "World Model", "keywords": ["world model"]},
+                "unassigned": {"label": "Unassigned", "keywords": []},
+            },
+        )
+        built = build_config_from_options(base_config, fetch_options, rank_options, llm_options, digest_options)
 
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "preset.yaml"
@@ -133,67 +172,315 @@ class PaperRadarCoreTests(unittest.TestCase):
             loaded = load_config(path)
 
         self.assertEqual(build_fetch_options_from_config(loaded).queries, fetch_options.queries)
-        self.assertEqual(build_fetch_options_from_config(loaded).days_back, 14)
+        self.assertEqual(build_fetch_options_from_config(loaded).openreview_venues, fetch_options.openreview_venues)
         self.assertEqual(build_rank_options_from_config(loaded).daily_top_k, 5)
-        self.assertAlmostEqual(sum(build_rank_options_from_config(loaded).weights.values()), 1.0, places=6)
+        self.assertTrue(loaded["llm"]["enabled"])
+        self.assertEqual(loaded["digest"]["tracks"], ["manipulation", "world_model"])
 
-    def test_fetch_enrich_rank_export_pipeline_with_mock_http(self) -> None:
-        now = dt.datetime.now(dt.timezone.utc)
-        arxiv_response = Mock(status_code=200, text=build_arxiv_feed([now - dt.timedelta(days=1)]))
-        arxiv_response.raise_for_status = Mock()
-        semantic_response = Mock(status_code=200)
-        semantic_response.json = Mock(
+    def test_openreview_extracts_metadata_and_review_signal(self) -> None:
+        now_ms = int(dt.datetime.now(dt.timezone.utc).timestamp() * 1000)
+        response = Mock(status_code=200)
+        response.raise_for_status = Mock()
+        response.json = Mock(
             return_value={
-                "data": [
+                "notes": [
                     {
-                        "venue": "CoRL",
-                        "citationCount": 42,
-                        "fieldsOfStudy": ["Robotics"],
-                        "externalIds": {"DOI": "10.1000/test"},
-                        "openAccessPdf": {"url": "https://example.com/test.pdf"},
+                        "id": "note-1",
+                        "forum": "forum-1",
+                        "content": {
+                            "title": {"value": "Robot World Models"},
+                            "abstract": {"value": "We study world models for robot planning."},
+                            "authors": {"value": ["Tester One"]},
+                            "keywords": {"value": ["robot learning", "world model"]},
+                        },
+                        "details": {
+                            "directReplies": [
+                                {
+                                    "invitation": "ICLR.cc/2026/Conference/Paper1/-/Official_Review",
+                                    "content": {
+                                        "rating": {"value": "8: clear accept"},
+                                        "confidence": {"value": "4: high confidence"},
+                                    },
+                                },
+                                {
+                                    "invitation": "ICLR.cc/2026/Conference/Paper1/-/Decision",
+                                    "content": {"decision": {"value": "Accept (Poster)"}},
+                                },
+                            ]
+                        },
+                        "cdate": now_ms,
                     }
                 ]
             }
         )
 
-        def fake_get(url, **kwargs):
-            if "arxiv" in url:
-                return arxiv_response
-            if "semanticscholar" in url:
-                return semantic_response
-            raise AssertionError(f"Unexpected URL: {url}")
-
         fetch_options = FetchOptions(
-            queries=["robot learning"],
+            queries=["robot"],
+            categories=["cs.RO"],
+            days_back=30,
+            max_results_per_query=5,
+            enable_semanticscholar=False,
+            enable_openreview=True,
+            openreview_venues=["ICLR.cc/2026/Conference"],
+            openreview_keywords=["robot"],
+        )
+
+        with patch("paper_radar_core.requests.get", return_value=response):
+            papers, status = collect_openreview(fetch_options, pause_s=0.0)
+
+        self.assertEqual(len(papers), 1)
+        self.assertEqual(papers[0].decision, "Accept (Poster)")
+        self.assertEqual(papers[0].review_count, 1)
+        self.assertGreater(papers[0].review_signal or 0.0, 0.0)
+        self.assertEqual(status["venues"]["ICLR.cc/2026/Conference"]["matched"], 1)
+
+    def test_openalex_fallback_enrichment_prefers_arxiv_id_then_title(self) -> None:
+        paper = make_paper(
+            title="Robot World Models",
+            abstract="We study world models for robot planning.",
+            external_id="2604.00001v1",
+        )
+        fetch_options = FetchOptions(
+            queries=["robot"],
             categories=["cs.RO"],
             days_back=7,
             max_results_per_query=5,
-            enable_semanticscholar=True,
+            enable_semanticscholar=False,
+            enable_openalex=True,
         )
 
-        with patch("paper_radar_core.requests.get", side_effect=fake_get):
-            with patch("paper_radar_core.time.sleep", return_value=None):
-                fetched = fetch_papers(fetch_options, pause_s=0.0)
-                enriched = enrich_papers(
-                    fetched,
-                    fetch_options,
-                    env={"SEMANTIC_SCHOLAR_API_KEY": "test-key"},
-                    sleep_s=0.0,
-                )
-                ranked = rank_papers(enriched, self.default_rank_options)
+        empty_response = Mock(status_code=200)
+        empty_response.raise_for_status = Mock()
+        empty_response.json = Mock(return_value={"results": []})
 
-        self.assertEqual(len(fetched), 1)
-        self.assertEqual(enriched[0].venue, "CoRL")
-        self.assertEqual(enriched[0].citations, 42)
-        self.assertEqual(ranked[0].doi, "10.1000/test")
+        hit_response = Mock(status_code=200)
+        hit_response.raise_for_status = Mock()
+        hit_response.json = Mock(
+            return_value={
+                "results": [
+                    {
+                        "id": "https://openalex.org/W123",
+                        "cited_by_count": 19,
+                        "doi": "https://doi.org/10.1000/openalex",
+                        "primary_location": {"source": {"display_name": "OpenReview"}},
+                        "primary_topic": {"display_name": "Robot Learning"},
+                        "concepts": [{"display_name": "World Models"}],
+                        "open_access": {"is_oa": True, "oa_url": "https://example.com/openalex.pdf"},
+                    }
+                ]
+            }
+        )
+
+        with patch("paper_radar_core.requests.get", side_effect=[empty_response, hit_response]):
+            with patch("paper_radar_core.time.sleep", return_value=None):
+                enriched, status = enrich_openalex([paper], fetch_options, env={}, sleep_s=0.0)
+
+        self.assertEqual(status["enriched"], 1)
+        self.assertEqual(enriched[0].citations, 19)
+        self.assertEqual(enriched[0].venue, "OpenReview")
+        self.assertEqual(enriched[0].doi, "10.1000/openalex")
+        self.assertIn("World Models", enriched[0].topics)
+
+    def test_summary_and_evaluator_only_touch_top_n(self) -> None:
+        papers = [
+            make_paper(
+                title="Top Robot Paper",
+                abstract="We propose a robot policy with real robot ablation.",
+                citations=20,
+            ),
+            make_paper(
+                title="Lower Robot Paper",
+                abstract="A smaller benchmark paper.",
+                external_id="test-2",
+            ),
+        ]
+        ranked = rank_papers(assign_tracks(papers, self.digest_options), self.default_rank_options)
+        llm_options = LLMOptions(enabled=True, summary_top_n=1, timeout_s=10)
+
+        summary_response = Mock(status_code=200)
+        summary_response.raise_for_status = Mock()
+        summary_response.json = Mock(
+            return_value={
+                "choices": [
+                    {
+                        "message": {
+                            "content": (
+                                '{"summary":"핵심 요약","why_it_matters":"중요성","method":"방법",'
+                                '"setup_results":"결과","robotics_relevance":"높음",'
+                                '"limitations":"한계","interest_score":90,"recommended_action":"읽기"}'
+                            )
+                        }
+                    }
+                ]
+            }
+        )
+        evaluator_response = Mock(status_code=200)
+        evaluator_response.raise_for_status = Mock()
+        evaluator_response.json = Mock(
+            return_value={
+                "choices": [
+                    {
+                        "message": {
+                            "content": (
+                                '{"verdict":"pass","unsupported_claims":[],"novelty_overclaim":false,'
+                                '"simulation_vs_real_error":false,"baseline_ablation_issue":false,'
+                                '"notes":"ok","revised_summary":""}'
+                            )
+                        }
+                    }
+                ]
+            }
+        )
+
+        with patch("paper_radar_core.requests.post", side_effect=[summary_response, evaluator_response]):
+            summarized = summarize_top_papers(
+                ranked,
+                llm_options,
+                env={"OPENAI_API_KEY": "test-key"},
+            )
+
+        self.assertEqual(summarized[0].summary_status, "complete")
+        self.assertEqual(summarized[0].evaluator_status, "pass")
+        self.assertTrue(summarized[0].summary_ko)
+        self.assertEqual(summarized[1].summary_status, "skipped_top_n")
+        self.assertEqual(summarized[1].evaluator_status, "skipped_top_n")
+
+    def test_assign_tracks_and_digest_support_multilabel(self) -> None:
+        paper = make_paper(
+            title="Dexterous world model manipulation",
+            abstract="We use a world model for dexterous manipulation planning with a new dataset.",
+        )
+        assigned = assign_tracks([paper], self.digest_options)
+        digest = build_track_digest(assigned, self.digest_options)
+
+        self.assertEqual(assigned[0].primary_track, "manipulation")
+        self.assertIn("world_model", assigned[0].track_ids)
+        self.assertIn("Manipulation", digest.daily_markdown)
+        self.assertIn("Weekly Track Digest", digest.weekly_markdown)
+
+    def test_compare_presets_reuses_same_fetch_corpus_and_flags_different_fetch(self) -> None:
+        base_config = load_config("paper_radar_config.example.yaml")
+        config_a = build_config_from_options(
+            base_config,
+            FetchOptions(
+                queries=["robot learning"],
+                categories=["cs.RO"],
+                days_back=7,
+                max_results_per_query=5,
+                enable_semanticscholar=False,
+            ),
+            self.default_rank_options,
+        )
+        config_b = build_config_from_options(
+            base_config,
+            FetchOptions(
+                queries=["robot learning"],
+                categories=["cs.RO"],
+                days_back=7,
+                max_results_per_query=5,
+                enable_semanticscholar=False,
+            ),
+            RankOptions(
+                include_keywords=["robot", "world model"],
+                exclude_keywords=[],
+                weights={
+                    "relevance": 0.4,
+                    "novelty": 0.2,
+                    "empirical": 0.1,
+                    "source_signal": 0.1,
+                    "momentum": 0.1,
+                    "recency": 0.1,
+                    "actionability": 0.0,
+                },
+                buckets=self.default_rank_options.buckets,
+                daily_top_k=8,
+            ),
+        )
+        config_c = build_config_from_options(
+            base_config,
+            FetchOptions(
+                queries=["humanoid"],
+                categories=["cs.RO"],
+                days_back=14,
+                max_results_per_query=5,
+                enable_semanticscholar=False,
+            ),
+            self.default_rank_options,
+        )
+
+        papers = rank_papers(assign_tracks([make_paper("Robot policy learning", "Real robot policy study.")], self.digest_options), self.default_rank_options)
+        other_papers = rank_papers(assign_tracks([make_paper("Humanoid control", "Humanoid locomotion paper.", external_id="test-9")], self.digest_options), self.default_rank_options)
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            export_results(ranked, tmpdir, top_k=3)
-            digest_text = Path(tmpdir, "daily_radar.md").read_text(encoding="utf-8")
-            jsonl_text = Path(tmpdir, "papers.jsonl").read_text(encoding="utf-8")
+            tmpdir_path = Path(tmpdir)
+            db_path = tmpdir_path / "paper_radar.sqlite3"
+            path_a = tmpdir_path / "config_a.yaml"
+            path_b = tmpdir_path / "config_b.yaml"
+            path_c = tmpdir_path / "config_c.yaml"
+            save_config(path_a, config_a)
+            save_config(path_b, config_b)
+            save_config(path_c, config_c)
 
-        self.assertIn("Daily Paper Radar", digest_text)
-        self.assertIn('"citations": 42', jsonl_text)
+            store = PaperRadarStore(db_path)
+            run_a = store.start_run(
+                config_hash_value=config_hash(config_a),
+                config_path=str(path_a),
+                config=config_a,
+                fetch_signature=fetch_options_signature(build_fetch_options_from_config(config_a)),
+            )
+            store.persist_ranked_run(run_a, papers)
+            store.finalize_run(run_a, status="completed", total_papers=len(papers), source_status={"ok": True})
+
+            run_c = store.start_run(
+                config_hash_value=config_hash(config_c),
+                config_path=str(path_c),
+                config=config_c,
+                fetch_signature=fetch_options_signature(build_fetch_options_from_config(config_c)),
+            )
+            store.persist_ranked_run(run_c, other_papers)
+            store.finalize_run(run_c, status="completed", total_papers=len(other_papers), source_status={"ok": True})
+
+            same_fetch = compare_presets(path_a, path_b, store_path=db_path)
+            different_fetch = compare_presets(path_a, path_c, store_path=db_path)
+
+        self.assertFalse(same_fetch["raw_corpus_differs"])
+        self.assertIsNotNone(same_fetch["results"])
+        self.assertTrue(different_fetch["raw_corpus_differs"])
+
+    def test_execute_pipeline_persists_sqlite_and_exports(self) -> None:
+        config = load_config("paper_radar_config.example.yaml")
+        config["sources"]["semanticscholar"]["enabled"] = False
+        config["sources"]["openreview"]["enabled"] = False
+        config["sources"]["openalex"]["enabled"] = False
+        config["llm"]["enabled"] = False
+
+        now = dt.datetime.now(dt.timezone.utc)
+        arxiv_response = Mock(status_code=200, text=build_arxiv_feed([now - dt.timedelta(days=1)]))
+        arxiv_response.raise_for_status = Mock()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir_path = Path(tmpdir)
+            db_path = tmpdir_path / DEFAULT_DB_PATH.name
+            out_dir = tmpdir_path / "data"
+            with patch("paper_radar_core.requests.get", return_value=arxiv_response):
+                with patch("paper_radar_core.time.sleep", return_value=None):
+                    execution = execute_pipeline(
+                        config,
+                        config_path="paper_radar_config.example.yaml",
+                        store_path=db_path,
+                        out_dir=out_dir,
+                        persist=True,
+                        export=True,
+                        pause_s=0.0,
+                        sleep_s=0.0,
+                    )
+
+            self.assertIsNotNone(execution.run_id)
+            self.assertTrue((out_dir / "daily_radar.md").exists())
+            self.assertTrue((out_dir / "weekly_track_digest.md").exists())
+            self.assertTrue((out_dir / "papers.jsonl").exists())
+            store = PaperRadarStore(db_path)
+            self.assertEqual(len(store.load_run_papers(execution.run_id)), 1)
 
     def test_rerank_does_not_hit_network(self) -> None:
         paper = make_paper(
@@ -202,7 +489,7 @@ class PaperRadarCoreTests(unittest.TestCase):
             citations=10,
         )
         with patch("paper_radar_core.requests.get") as mock_get:
-            rank_papers([paper], self.default_rank_options)
+            rank_papers(assign_tracks([paper], self.digest_options), self.default_rank_options)
         mock_get.assert_not_called()
 
     def test_warn_does_not_raise_when_stderr_is_invalid(self) -> None:
@@ -251,21 +538,28 @@ class PaperRadarCoreTests(unittest.TestCase):
                 self.assertEqual(get_config_path([]), config_path)
 
 
-def make_paper(title: str, abstract: str, citations: int | None = None) -> Paper:
+def make_paper(
+    title: str,
+    abstract: str,
+    citations: int | None = None,
+    *,
+    external_id: str = "test-1",
+) -> Paper:
     now = dt.datetime.now(dt.timezone.utc)
     return Paper(
         source="arxiv",
-        external_id="test-1",
+        external_id=external_id,
         title=title,
         abstract=abstract,
         authors=["Tester"],
         published_at=now.isoformat().replace("+00:00", "Z"),
         updated_at=now.isoformat().replace("+00:00", "Z"),
-        url="https://example.com/abs/test-1",
-        pdf_url="https://example.com/pdf/test-1",
+        url=f"https://example.com/abs/{external_id}",
+        pdf_url=f"https://example.com/pdf/{external_id}",
         categories=["cs.RO"],
         citations=citations,
         normalized_title=title.lower(),
+        source_metadata={"arxiv": {"external_id": external_id}},
     )
 
 
