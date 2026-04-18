@@ -66,6 +66,12 @@ python -m streamlit run paper_radar_app.py
 
 브라우저에서 `http://localhost:8501` 로 접속합니다.
 
+다른 config 파일로 실행하려면:
+
+```bash
+python -m streamlit run paper_radar_app.py -- --config-path paper_radar_config_fundamental_ml.yaml
+```
+
 GUI 사용 흐름:
 
 1. 왼쪽 사이드바에서 fetch 설정을 조정합니다.
@@ -81,6 +87,18 @@ python paper_radar_starter.py
 ```
 
 CLI는 [paper_radar_config.example.yaml](<\\?\UNC\wsl.localhost\Ubuntu-24.04\home\changsu_ha\repos\paper_radar_harness\paper_radar_config.example.yaml:1>) 기준으로 실행한 뒤 결과를 `data/`에 저장합니다.
+
+다른 config 파일로 실행하려면:
+
+```bash
+python paper_radar_starter.py --config-path paper_radar_config_fundamental_ml.yaml
+```
+
+또는 위치 인자로도 가능합니다.
+
+```bash
+python paper_radar_starter.py paper_radar_config_fundamental_ml.yaml
+```
 
 ## 가상환경(venv) 설정
 

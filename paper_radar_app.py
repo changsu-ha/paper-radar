@@ -38,6 +38,7 @@ from paper_radar_core import (
     export_results,
     fetch_options_signature,
     fetch_papers,
+    get_config_path,
     load_config,
     normalize_weight_map,
     paper_from_dict,
@@ -63,12 +64,14 @@ CATEGORY_OPTIONS = [
 
 
 def main() -> None:
+    config_path = get_runtime_config_path()
     st.set_page_config(page_title="Paper Radar GUI", layout="wide")
     st.title("Paper Radar GUI")
+    st.caption(f"Config: `{config_path}`")
     st.caption("검색 설정을 바꾸고, 수집 결과를 바로 재정렬하면서 볼 수 있는 로컬 실험용 UI입니다.")
 
-    initialize_session()
-    preset_paths = get_preset_paths()
+    initialize_session(config_path)
+    preset_paths = get_preset_paths(config_path)
 
     with st.sidebar:
         st.header("프리셋")
@@ -183,11 +186,19 @@ def main() -> None:
     show_paper_detail(ranked_papers[selected_idx], rank_options)
 
 
-def initialize_session() -> None:
-    if st.session_state.get("initialized"):
+def get_runtime_config_path() -> Path:
+    return get_config_path()
+
+
+def initialize_session(config_path: Path) -> None:
+    resolved_config_path = config_path.expanduser()
+    if (
+        st.session_state.get("initialized")
+        and st.session_state.get("config_source_path") == str(resolved_config_path)
+    ):
         return
 
-    config = load_config(DEFAULT_CONFIG_PATH)
+    config = load_config(resolved_config_path)
     apply_config_to_session(config)
     st.session_state["config_template"] = copy.deepcopy(config)
     st.session_state["fetched_raw_papers"] = []
@@ -195,6 +206,8 @@ def initialize_session() -> None:
     st.session_state["last_fetch_at"] = None
     st.session_state["last_fetch_count"] = 0
     st.session_state["preset_selector"] = "기본 예제"
+    st.session_state["config_source_path"] = str(resolved_config_path)
+    st.session_state["preset_selector"] = get_default_preset_label(resolved_config_path)
     st.session_state["preset_name"] = ""
     st.session_state["selected_paper_label"] = ""
     st.session_state["initialized"] = True
@@ -202,6 +215,22 @@ def initialize_session() -> None:
 
 def get_preset_paths() -> dict[str, Path]:
     preset_paths = {"기본 예제": DEFAULT_CONFIG_PATH}
+    if DEFAULT_PRESET_DIR.exists():
+        for path in sorted(DEFAULT_PRESET_DIR.glob("*.yaml")):
+            preset_paths[path.stem] = path
+    return preset_paths
+
+
+def get_default_preset_label(config_path: Path) -> str:
+    if config_path == DEFAULT_CONFIG_PATH:
+        return "기본 예제"
+    return f"실행 config ({config_path.name})"
+
+
+def get_preset_paths(config_path: Path) -> dict[str, Path]:
+    preset_paths = {get_default_preset_label(config_path): config_path}
+    if config_path != DEFAULT_CONFIG_PATH:
+        preset_paths["기본 예제"] = DEFAULT_CONFIG_PATH
     if DEFAULT_PRESET_DIR.exists():
         for path in sorted(DEFAULT_PRESET_DIR.glob("*.yaml")):
             preset_paths[path.stem] = path

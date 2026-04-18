@@ -1,0 +1,127 @@
+project:
+  name: paper-radar-fundamental-ml
+  language: ko
+  timezone: Asia/Seoul
+
+sources:
+  arxiv:
+    enabled: true
+    categories:
+      - cs.LG
+      - stat.ML
+      - cs.CL
+      - cs.AI
+    queries:
+      - generalization OR optimization OR convergence OR sample complexity OR PAC-Bayes
+      - in-context learning OR transformer theory OR mechanistic interpretability OR scaling law
+      - large language model OR llm OR post-training OR instruction tuning OR preference optimization
+      - pretraining data OR data curation OR data filtering OR data mixture OR synthetic data
+      - self-supervised OR representation learning OR contrastive OR masked modeling
+      - contamination OR deduplication OR tokenization OR curriculum learning OR data quality
+      - alignment OR reward model OR RLHF OR DPO OR verifier
+    days_back_daily: 10
+    days_back_weekly: 30
+    max_results_per_query: 100
+
+  openreview:
+    enabled: false
+    venues:
+      - ICLR.cc/2026/Conference
+      - ICML.cc/2026/Conference
+      - NeurIPS.cc/2025/Conference
+    keywords:
+      - machine learning theory
+      - generalization
+      - optimization
+      - sample complexity
+      - large language models
+      - pretraining data
+      - data curation
+      - alignment
+
+  semanticscholar:
+    enabled: true
+    api_key_env: SEMANTIC_SCHOLAR_API_KEY
+
+  openalex:
+    enabled: false
+    api_key_env: OPENALEX_API_KEY
+
+filters:
+  include_keywords:
+    - machine learning
+    - theory
+    - generalization
+    - optimization
+    - convergence
+    - sample complexity
+    - PAC-Bayes
+    - scaling law
+    - transformer
+    - llm
+    - large language model
+    - language model
+    - pretraining
+    - post-training
+    - instruction tuning
+    - in-context learning
+    - alignment
+    - reward model
+    - preference optimization
+    - RLHF
+    - DPO
+    - verifier
+    - data curation
+    - data filtering
+    - data selection
+    - data mixture
+    - data quality
+    - synthetic data
+    - contamination
+    - deduplication
+    - memorization
+    - dataset
+    - tokenization
+    - representation learning
+    - self-supervised
+    - contrastive
+    - masked modeling
+    - mechanistic interpretability
+  exclude_keywords:
+    - robot
+    - robotics
+    - humanoid
+    - manipulation
+    - dexterous
+    - teleoperation
+    - sim2real
+    - embodied
+    - vision-language-action
+    - survey
+    - editorial
+    - position paper
+
+ranking:
+  weights:
+    relevance: 0.34
+    novelty: 0.22
+    empirical: 0.08
+    source_signal: 0.08
+    momentum: 0.13
+    recency: 0.15
+    actionability: 0.0
+  buckets:
+    must_read: 80
+    worth_reading: 65
+    skim: 50
+
+digest:
+  daily_top_k: 10
+  weekly_top_k_per_track: 6
+  tracks:
+    - ml_theory
+    - llm_foundations
+    - data_and_curation
+    - scaling_and_pretraining
+    - representation_learning
+    - alignment_and_posttraining

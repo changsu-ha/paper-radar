@@ -20,6 +20,7 @@ from paper_radar_core import (
     enrich_papers,
     export_results,
     fetch_papers,
+    get_config_path,
     load_config,
     normalize_weight_map,
     parse_keywords_input,
@@ -237,6 +238,17 @@ class PaperRadarCoreTests(unittest.TestCase):
 
         self.assertEqual(len(enriched), 1)
         self.assertIsNone(enriched[0].venue)
+
+    def test_get_config_path_accepts_flag_positional_and_env(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_path = Path(tmpdir) / "custom.yaml"
+            config_path.write_text("project:\n  name: demo\n", encoding="utf-8")
+
+            self.assertEqual(get_config_path(["--config-path", str(config_path)]), config_path)
+            self.assertEqual(get_config_path([str(config_path)]), config_path)
+
+            with patch.dict("os.environ", {"PAPER_RADAR_CONFIG": str(config_path)}, clear=False):
+                self.assertEqual(get_config_path([]), config_path)
 
 
 def make_paper(title: str, abstract: str, citations: int | None = None) -> Paper:

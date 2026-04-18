@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import copy
 import datetime as dt
 import json
@@ -87,6 +88,22 @@ class RankOptions:
     weights: dict[str, float]
     buckets: dict[str, float]
     daily_top_k: int
+
+
+def get_config_path(
+    argv: list[str] | None = None,
+    default_path: str | Path = DEFAULT_CONFIG_PATH,
+) -> Path:
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("config_path", nargs="?")
+    parser.add_argument("--config-path", dest="config_path_flag")
+    args, _ = parser.parse_known_args(argv)
+
+    raw_path = args.config_path_flag or args.config_path or os.getenv("PAPER_RADAR_CONFIG")
+    candidate = Path(raw_path).expanduser() if raw_path else Path(default_path)
+    if not candidate.exists():
+        raise FileNotFoundError(f"Config file not found: {candidate}")
+    return candidate
 
 
 def load_config(path: str | Path) -> dict[str, Any]:
