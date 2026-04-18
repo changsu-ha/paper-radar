@@ -523,10 +523,8 @@ def build_digest_options_from_config(config: Mapping[str, Any]) -> DigestOptions
     track_defs_cfg = digest_cfg.get("track_definitions") or {}
     track_definitions = copy.deepcopy(BUILTIN_TRACK_DEFINITIONS)
     for track_id, definition in track_defs_cfg.items():
-        track_definitions[str(track_id)] = {
-            "label": str(definition.get("label", track_id)),
-            "keywords": parse_keywords_input(definition.get("keywords", [])),
-        }
+        track_key = str(track_id)
+        track_definitions[track_key] = _normalize_track_definition(track_key, definition)
     if TRACK_UNASSIGNED not in track_definitions:
         track_definitions[TRACK_UNASSIGNED] = {"label": "Unassigned", "keywords": []}
     return DigestOptions(
@@ -535,6 +533,22 @@ def build_digest_options_from_config(config: Mapping[str, Any]) -> DigestOptions
         tracks=configured_tracks or [TRACK_UNASSIGNED],
         track_definitions=track_definitions,
     )
+
+
+def _normalize_track_definition(track_id: str, definition: Any) -> dict[str, Any]:
+    if isinstance(definition, Mapping):
+        return {
+            "label": str(definition.get("label") or _default_track_label(track_id)),
+            "keywords": parse_keywords_input(definition.get("keywords", [])),
+        }
+    return {
+        "label": _default_track_label(track_id),
+        "keywords": parse_keywords_input(definition),
+    }
+
+
+def _default_track_label(track_id: str) -> str:
+    return str(track_id).replace("_", " ").strip().title() or str(track_id)
 
 
 def build_config_from_options(

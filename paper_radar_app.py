@@ -255,7 +255,7 @@ def discover_config_yaml_paths(
 def build_config_label(path: Path, *, root: Path, config_root: Path, preset_root: Path) -> str:
     resolved = path.resolve()
     if resolved == DEFAULT_CONFIG_PATH.resolve():
-        return f"기본 예제 ({resolved.name})"
+        return f"{resolved.name}"
     try:
         if resolved.is_relative_to(config_root):
             return f"config: {resolved.stem}"

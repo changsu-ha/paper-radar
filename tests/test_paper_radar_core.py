@@ -19,6 +19,7 @@ from paper_radar_core import (
     WEIGHT_KEYS,
     assign_tracks,
     build_config_from_options,
+    build_digest_options_from_config,
     build_fetch_options_from_config,
     build_rank_options_from_config,
     build_track_digest,
@@ -278,6 +279,27 @@ class PaperRadarCoreTests(unittest.TestCase):
         self.assertEqual(enriched[0].venue, "OpenReview")
         self.assertEqual(enriched[0].doi, "10.1000/openalex")
         self.assertIn("World Models", enriched[0].topics)
+
+    def test_build_digest_options_accepts_list_style_track_definitions(self) -> None:
+        config = {
+            "digest": {
+                "daily_top_k": 5,
+                "weekly_top_k_per_track": 2,
+                "tracks": ["data_selection"],
+                "track_definitions": {
+                    "data_selection": ["data curation", "data filtering", "data selection"],
+                },
+            }
+        }
+
+        digest_options = build_digest_options_from_config(config)
+
+        self.assertEqual(digest_options.tracks, ["data_selection"])
+        self.assertEqual(digest_options.track_definitions["data_selection"]["label"], "Data Selection")
+        self.assertEqual(
+            digest_options.track_definitions["data_selection"]["keywords"],
+            ["data curation", "data filtering", "data selection"],
+        )
 
     def test_assign_tracks_and_digest_support_multilabel(self) -> None:
         paper = make_paper(
