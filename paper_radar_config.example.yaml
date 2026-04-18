@@ -1,0 +1,77 @@
+project:
+  name: paper-radar
+  language: ko
+  timezone: Asia/Seoul
+sources:
+  arxiv:
+    enabled: true
+    categories:
+    - cs.RO
+    - cs.LG
+    - cs.AI
+    - cs.CV
+    queries:
+    - vision-language-action OR embodied OR robot learning
+    - manipulation OR dexterous OR bimanual
+    - world model OR visuomotor OR policy learning
+    - humanoid OR teleoperation OR sim2real
+    days_back_daily: 10
+    days_back_weekly: 30
+    max_results_per_query: 100
+  openreview:
+    enabled: false
+    venues:
+    - ICLR.cc/2026/Conference
+    - robot-learning.org/CoRL/2025/Conference
+    keywords:
+    - manipulation
+    - policy
+    - embodied
+    - world model
+    - robot learning
+  semanticscholar:
+    enabled: true
+    api_key_env: SEMANTIC_SCHOLAR_API_KEY
+  openalex:
+    enabled: false
+    api_key_env: OPENALEX_API_KEY
+filters:
+  include_keywords:
+  - robot
+  - robotics
+  - manipulation
+  - visuomotor
+  - policy
+  - embodied
+  - vla
+  - humanoid
+  - dexterous
+  - world model
+  - teleoperation
+  - sim2real
+  exclude_keywords:
+  - survey
+  - position paper
+  - editorial
+ranking:
+  weights:
+    relevance: 0.25
+    novelty: 0.2
+    empirical: 0.15
+    source_signal: 0.1
+    momentum: 0.1
+    recency: 0.1
+    actionability: 0.1
+  buckets:
+    must_read: 85
+    worth_reading: 70
+    skim: 55
+digest:
+  daily_top_k: 8
+  weekly_top_k_per_track: 5
+  tracks:
+  - vla
+  - manipulation
+  - humanoid
+  - world_model
+  - supporting_ml

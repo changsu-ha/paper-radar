@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.codex
+
+data/*.md
+data/*.jsonl
+data/*.log
+data/gui_presets/
+
+paper_radar_harness_bundle.zip
