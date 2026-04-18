@@ -13,19 +13,21 @@ class PaperRadarAppHelperTests(unittest.TestCase):
     def test_discover_config_yaml_paths_includes_configs_and_excludes_prompts(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
+            config_dir = root / "configs"
             preset_dir = root / "data" / "gui_presets"
+            config_dir.mkdir(parents=True)
             preset_dir.mkdir(parents=True)
 
-            base_config = root / "paper_radar_config.example.yaml"
-            alt_config = root / "paper_radar_config_fundamental_ml.yaml"
-            prompts = root / "paper_radar_prompts.example.yaml"
+            base_config = config_dir / "paper_radar_config_robotics.yaml"
+            alt_config = config_dir / "paper_radar_config_fundamental_ml.yaml"
+            prompts = config_dir / "paper_radar_prompts.example.yaml"
             other_yaml = root / "notes.yaml"
             preset = preset_dir / "robot.yaml"
 
             for path in (base_config, alt_config, prompts, other_yaml, preset):
                 path.write_text("project:\n  name: demo\n", encoding="utf-8")
 
-            discovered = discover_config_yaml_paths(repo_root=root, preset_dir=preset_dir)
+            discovered = discover_config_yaml_paths(repo_root=root, config_dir=config_dir, preset_dir=preset_dir)
             discovered_paths = set(discovered.values())
 
             self.assertIn(base_config.resolve(), discovered_paths)

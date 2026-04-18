@@ -29,7 +29,8 @@ OPENREVIEW_API = "https://api2.openreview.net/notes"
 OPENALEX_WORKS_API = "https://api.openalex.org/works"
 SEMANTIC_SCHOLAR_API = "https://api.semanticscholar.org/graph/v1/paper/search/bulk"
 
-DEFAULT_CONFIG_PATH = Path("paper_radar_config.example.yaml")
+DEFAULT_CONFIG_DIR = Path("configs")
+DEFAULT_CONFIG_PATH = DEFAULT_CONFIG_DIR / "paper_radar_config_robotics.yaml"
 DEFAULT_PRESET_DIR = Path("data/gui_presets")
 DEFAULT_WARNING_LOG_PATH = Path("data/runtime_warnings.log")
 DEFAULT_DB_PATH = Path("data/paper_radar.sqlite3")
@@ -269,13 +270,25 @@ def get_config_path(
 
     raw_path = args.config_path_flag or args.config_path or os.getenv("PAPER_RADAR_CONFIG")
     candidate = Path(raw_path).expanduser() if raw_path else Path(default_path)
-    if not candidate.exists():
-        raise FileNotFoundError(f"Config file not found: {candidate}")
-    return candidate
+    return resolve_config_path(candidate)
+
+
+def resolve_config_path(path: str | Path, *, config_dir: str | Path = DEFAULT_CONFIG_DIR) -> Path:
+    candidate = Path(path).expanduser()
+    if candidate.exists():
+        return candidate
+
+    config_root = Path(config_dir).expanduser()
+    fallback = config_root / candidate.name
+    if not candidate.is_absolute() and len(candidate.parts) == 1 and fallback.exists():
+        return fallback
+
+    raise FileNotFoundError(f"Config file not found: {candidate}")
 
 
 def load_config(path: str | Path) -> dict[str, Any]:
-    with open(path, "r", encoding="utf-8") as f:
+    resolved = resolve_config_path(path)
+    with open(resolved, "r", encoding="utf-8") as f:
         text = f.read()
     if yaml is not None:
         return yaml.safe_load(text)
@@ -2248,4 +2261,3 @@ def _parse_any_datetime(value: str | None) -> dt.datetime | None:
 
 def _clean(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
-

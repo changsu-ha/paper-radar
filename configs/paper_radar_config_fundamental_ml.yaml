@@ -21,7 +21,7 @@ sources:
       - alignment OR reward model OR RLHF OR DPO OR verifier
     days_back_daily: 10
     days_back_weekly: 30
-    max_results_per_query: 100
+    max_results_per_query: 10
 
   openreview:
     enabled: false

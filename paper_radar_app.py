@@ -29,6 +29,7 @@ except ModuleNotFoundError:
 
 from paper_radar_core import (
     BUCKET_KEYS,
+    DEFAULT_CONFIG_DIR,
     DEFAULT_CONFIG_PATH,
     DEFAULT_DB_PATH,
     DEFAULT_PRESET_DIR,
@@ -205,21 +206,26 @@ def get_runtime_config_path() -> Path:
 def discover_config_yaml_paths(
     *,
     repo_root: Path | None = None,
+    config_dir: Path = DEFAULT_CONFIG_DIR,
     preset_dir: Path = DEFAULT_PRESET_DIR,
     extra_paths: Iterable[Path] = (),
 ) -> dict[str, Path]:
     root = (repo_root or Path(".")).resolve()
-    preset_root = preset_dir.resolve()
+    config_root = (root / config_dir).resolve() if not Path(config_dir).is_absolute() else Path(config_dir).resolve()
+    preset_root = (root / preset_dir).resolve() if not Path(preset_dir).is_absolute() else Path(preset_dir).resolve()
     paths: list[Path] = []
 
-    for path in sorted(root.glob("paper_radar_config*.yaml")):
-        if path.name == "paper_radar_prompts.example.yaml":
-            continue
-        paths.append(path.resolve())
+    if config_root.exists():
+        for pattern in ("*.yaml", "*.yml"):
+            for path in sorted(config_root.glob(pattern)):
+                if path.name == "paper_radar_prompts.example.yaml":
+                    continue
+                paths.append(path.resolve())
 
     if preset_root.exists():
-        for path in sorted(preset_root.glob("*.yaml")):
-            paths.append(path.resolve())
+        for pattern in ("*.yaml", "*.yml"):
+            for path in sorted(preset_root.glob(pattern)):
+                paths.append(path.resolve())
 
     for extra_path in extra_paths:
         candidate = Path(extra_path).expanduser().resolve()
@@ -239,17 +245,22 @@ def discover_config_yaml_paths(
 
     labeled: dict[str, Path] = {}
     for path in unique_paths:
-        label = build_config_label(path, root=root, preset_root=preset_root)
+        label = build_config_label(path, root=root, config_root=config_root, preset_root=preset_root)
         if label in labeled:
             label = f"{label} [{path.parent.name}]"
         labeled[label] = path
     return labeled
 
 
-def build_config_label(path: Path, *, root: Path, preset_root: Path) -> str:
+def build_config_label(path: Path, *, root: Path, config_root: Path, preset_root: Path) -> str:
     resolved = path.resolve()
     if resolved == DEFAULT_CONFIG_PATH.resolve():
         return f"기본 예제 ({resolved.name})"
+    try:
+        if resolved.is_relative_to(config_root):
+            return f"config: {resolved.stem}"
+    except ValueError:
+        pass
     try:
         if resolved.is_relative_to(preset_root):
             return f"preset: {resolved.stem}"

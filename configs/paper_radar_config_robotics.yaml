@@ -17,7 +17,7 @@ sources:
     - humanoid OR teleoperation OR sim2real
     days_back_daily: 10
     days_back_weekly: 30
-    max_results_per_query: 100
+    max_results_per_query: 10
   openreview:
     enabled: false
     venues:

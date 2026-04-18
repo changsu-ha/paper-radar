@@ -132,7 +132,7 @@ class PaperRadarCoreTests(unittest.TestCase):
         self.assertTrue(used_normalization)
 
     def test_preset_roundtrip_preserves_shape_and_strips_llm(self) -> None:
-        base_config = load_config("paper_radar_config.example.yaml")
+        base_config = load_config("paper_radar_config_robotics.yaml")
         base_config["llm"] = {"enabled": True}
         fetch_options = FetchOptions(
             queries=["robot learning", "humanoid"],
@@ -293,7 +293,7 @@ class PaperRadarCoreTests(unittest.TestCase):
         self.assertIn("Weekly Track Digest", digest.weekly_markdown)
 
     def test_compare_presets_reuses_same_fetch_corpus_and_flags_different_fetch(self) -> None:
-        base_config = load_config("paper_radar_config.example.yaml")
+        base_config = load_config("paper_radar_config_robotics.yaml")
         config_a = build_config_from_options(
             base_config,
             FetchOptions(
@@ -388,7 +388,7 @@ class PaperRadarCoreTests(unittest.TestCase):
         self.assertTrue(different_fetch["raw_corpus_differs"])
 
     def test_execute_pipeline_ignores_old_llm_config_and_persists_outputs(self) -> None:
-        config = load_config("paper_radar_config.example.yaml")
+        config = load_config("paper_radar_config_robotics.yaml")
         config["llm"] = {"enabled": True, "model_summary": "legacy"}
         config["sources"]["semanticscholar"]["enabled"] = False
         config["sources"]["openreview"]["enabled"] = False
@@ -406,7 +406,7 @@ class PaperRadarCoreTests(unittest.TestCase):
                 with patch("paper_radar_core.time.sleep", return_value=None):
                     execution = execute_pipeline(
                         config,
-                        config_path="paper_radar_config.example.yaml",
+                        config_path="paper_radar_config_robotics.yaml",
                         store_path=db_path,
                         out_dir=out_dir,
                         persist=True,
@@ -423,8 +423,8 @@ class PaperRadarCoreTests(unittest.TestCase):
             self.assertEqual(len(store.load_run_papers(execution.run_id)), 1)
 
     def test_diff_configs_ignores_llm_only_changes(self) -> None:
-        config_a = load_config("paper_radar_config.example.yaml")
-        config_b = load_config("paper_radar_config.example.yaml")
+        config_a = load_config("paper_radar_config_robotics.yaml")
+        config_b = load_config("paper_radar_config_robotics.yaml")
         config_a["llm"] = {"enabled": False}
         config_b["llm"] = {"enabled": True, "model_summary": "legacy"}
 
