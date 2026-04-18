@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import argparse
 import copy
@@ -31,7 +31,6 @@ SEMANTIC_SCHOLAR_API = "https://api.semanticscholar.org/graph/v1/paper/search/bu
 
 DEFAULT_CONFIG_PATH = Path("paper_radar_config.example.yaml")
 DEFAULT_PRESET_DIR = Path("data/gui_presets")
-DEFAULT_TIMEZONE = "Asia/Seoul"
 DEFAULT_WARNING_LOG_PATH = Path("data/runtime_warnings.log")
 DEFAULT_DB_PATH = Path("data/paper_radar.sqlite3")
 
@@ -167,45 +166,6 @@ BUILTIN_TRACK_DEFINITIONS: dict[str, dict[str, Any]] = {
         ],
     },
 }
-
-BUILTIN_PROMPTS = {
-    "daily_radar_ko": {
-        "system": (
-            "당신은 ML/Robot AI 논문 요약가다. 과장 없이 근거 중심으로 한국어로 요약하고, "
-            "실험과 한계를 분명히 적는다."
-        ),
-        "user_template": (
-            "다음 논문 정보를 바탕으로 한국어 요약을 작성하라.\n\n"
-            "[논문]\n"
-            "제목: {title}\n"
-            "초록: {abstract}\n"
-            "카테고리: {categories}\n"
-            "메타데이터: {metadata}\n\n"
-            "JSON으로만 답하라. 필드:\n"
-            "summary, why_it_matters, method, setup_results, robotics_relevance, "
-            "limitations, interest_score, recommended_action"
-        ),
-    },
-    "evaluator_ko": {
-        "system": (
-            "당신은 논문 요약 검증자다. 요약의 과장, 근거 부족, simulation과 real-world 혼동, "
-            "baseline 또는 ablation 관련 오해를 찾아라."
-        ),
-        "user_template": (
-            "다음 초안 요약을 검증하라.\n\n"
-            "[원문]\n"
-            "제목: {title}\n"
-            "초록: {abstract}\n"
-            "근거: {evidence}\n\n"
-            "[초안]\n"
-            "{draft}\n\n"
-            "JSON으로만 답하라. 필드:\n"
-            "verdict, unsupported_claims, novelty_overclaim, simulation_vs_real_error, "
-            "baseline_ablation_issue, notes, revised_summary"
-        ),
-    },
-}
-
 
 @dataclass
 class Paper:
@@ -2189,14 +2149,14 @@ def _paper_text(paper: Paper) -> str:
 
 def _render_summary(summary_json: Mapping[str, Any]) -> str:
     fields = [
-        ("한줄 요약", summary_json.get("summary")),
-        ("왜 중요한가", summary_json.get("why_it_matters")),
-        ("방법", summary_json.get("method")),
-        ("실험/결과", summary_json.get("setup_results")),
-        ("robotics 관련성", summary_json.get("robotics_relevance")),
-        ("한계", summary_json.get("limitations")),
-        ("관심도", summary_json.get("interest_score")),
-        ("추천 액션", summary_json.get("recommended_action")),
+        ("?쒖쨪 ?붿빟", summary_json.get("summary")),
+        ("??以묒슂?쒓?", summary_json.get("why_it_matters")),
+        ("諛⑸쾿", summary_json.get("method")),
+        ("?ㅽ뿕/寃곌낵", summary_json.get("setup_results")),
+        ("robotics 愿?⑥꽦", summary_json.get("robotics_relevance")),
+        ("?쒓퀎", summary_json.get("limitations")),
+        ("愿?щ룄", summary_json.get("interest_score")),
+        ("異붿쿇 ?≪뀡", summary_json.get("recommended_action")),
     ]
     lines = []
     for label, value in fields:
@@ -2288,3 +2248,4 @@ def _parse_any_datetime(value: str | None) -> dt.datetime | None:
 
 def _clean(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
+
