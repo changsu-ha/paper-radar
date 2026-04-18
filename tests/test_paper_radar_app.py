@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import tempfile
 import unittest
@@ -18,8 +18,8 @@ class PaperRadarAppHelperTests(unittest.TestCase):
             config_dir.mkdir(parents=True)
             preset_dir.mkdir(parents=True)
 
-            base_config = config_dir / "paper_radar_config_robotics.yaml"
-            alt_config = config_dir / "paper_radar_config_fundamental_ml.yaml"
+            base_config = config_dir / "robotics.yaml"
+            alt_config = config_dir / "fundamental_ml.yaml"
             prompts = config_dir / "paper_radar_prompts.example.yaml"
             other_yaml = root / "notes.yaml"
             preset = preset_dir / "robot.yaml"
@@ -97,3 +97,4 @@ class PaperRadarAppHelperTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

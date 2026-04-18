@@ -30,7 +30,7 @@ OPENALEX_WORKS_API = "https://api.openalex.org/works"
 SEMANTIC_SCHOLAR_API = "https://api.semanticscholar.org/graph/v1/paper/search/bulk"
 
 DEFAULT_CONFIG_DIR = Path("configs")
-DEFAULT_CONFIG_PATH = DEFAULT_CONFIG_DIR / "paper_radar_config_robotics.yaml"
+DEFAULT_CONFIG_PATH = DEFAULT_CONFIG_DIR / "robotics.yaml"
 DEFAULT_PRESET_DIR = Path("data/gui_presets")
 DEFAULT_WARNING_LOG_PATH = Path("data/runtime_warnings.log")
 DEFAULT_DB_PATH = Path("data/paper_radar.sqlite3")
@@ -282,6 +282,16 @@ def resolve_config_path(path: str | Path, *, config_dir: str | Path = DEFAULT_CO
     fallback = config_root / candidate.name
     if not candidate.is_absolute() and len(candidate.parts) == 1 and fallback.exists():
         return fallback
+
+    legacy_prefix = "paper_radar_config_"
+    if candidate.name.startswith(legacy_prefix):
+        stripped_name = candidate.name[len(legacy_prefix) :]
+        stripped_candidate = candidate.with_name(stripped_name)
+        if stripped_candidate.exists():
+            return stripped_candidate
+        stripped_fallback = config_root / stripped_name
+        if stripped_fallback.exists():
+            return stripped_fallback
 
     raise FileNotFoundError(f"Config file not found: {candidate}")
 
