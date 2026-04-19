@@ -53,6 +53,7 @@ from paper_radar_core import (
     export_results,
     fetch_options_signature,
     get_config_path,
+    is_openalex_affiliation_catalog_config,
     load_config,
     normalize_weight_map,
     openalex_self_check,
@@ -105,6 +106,7 @@ FIELD_HELP = {
     "openreview_venues_text": "OpenReview venue id 목록입니다. 줄마다 하나씩 입력합니다.",
     "openreview_keywords_text": "OpenReview 수집 결과 중 제목/초록/키워드에 들어 있어야 할 필터 키워드입니다. 쉼표 또는 줄바꿈으로 구분합니다.",
     "enable_openalex": "OpenAlex에서 citation, topic, OA 정보를 추가로 붙입니다. 후보 논문 수를 늘리는 기능은 아니고 메타데이터 enrich입니다.",
+    "openalex_priority_catalogs": "OpenAlex affiliation 기준으로 우선 순위를 올릴 기관 catalog입니다. 선택한 catalog와 저자 소속 기관이 매칭되면 source_signal bonus가 붙습니다.",
     "include_keywords_text": "이 키워드가 논문 텍스트에 많이 등장할수록 relevance 점수가 올라갑니다.",
     "exclude_keywords_text": "이 키워드가 발견되면 해당 논문은 바로 archive 처리됩니다.",
     "daily_top_k": "daily digest와 export에서 앞쪽에 보여줄 상위 논문 수입니다.",
@@ -136,6 +138,7 @@ def main() -> None:
     initial_config_path = get_runtime_config_path()
     initialize_session(initial_config_path)
     discovered_configs = discover_config_yaml_paths(extra_paths=[Path(st.session_state["config_source_path"])])
+    discovered_catalogs = discover_priority_catalog_paths()
     current_config_path = Path(st.session_state["config_source_path"])
     current_config_label = label_for_path(discovered_configs, current_config_path)
     store = PaperRadarStore(DEFAULT_DB_PATH)
@@ -145,7 +148,7 @@ def main() -> None:
     st.caption(f"SQLite: `{DEFAULT_DB_PATH}`")
 
     with st.sidebar:
-        render_sidebar(discovered_configs, current_config_label)
+        render_sidebar(discovered_configs, discovered_catalogs, current_config_label)
 
     fetch_options = build_fetch_options_from_session()
     rank_options = build_rank_options_from_session()
@@ -162,7 +165,7 @@ def main() -> None:
         and st.session_state.get("last_fetch_signature") != current_fetch_signature
     )
 
-    show_top_controls(rank_options, needs_refetch)
+    show_top_controls(fetch_options, rank_options, needs_refetch)
 
     button_cols = st.columns([1, 1, 1, 2])
     if button_cols[0].button("Fetch", type="primary", use_container_width=True):
@@ -222,6 +225,8 @@ def discover_config_yaml_paths(
             for path in sorted(config_root.glob(pattern)):
                 if path.name == "paper_radar_prompts.example.yaml":
                     continue
+                if is_catalog_yaml_path(path):
+                    continue
                 paths.append(path.resolve())
 
     if preset_root.exists():
@@ -234,6 +239,8 @@ def discover_config_yaml_paths(
         if candidate.suffix.lower() != ".yaml":
             continue
         if candidate.name == "paper_radar_prompts.example.yaml":
+            continue
+        if is_catalog_yaml_path(candidate):
             continue
         paths.append(candidate)
 
@@ -252,6 +259,43 @@ def discover_config_yaml_paths(
             label = f"{label} [{path.parent.name}]"
         labeled[label] = path
     return labeled
+
+
+def discover_priority_catalog_paths(
+    *,
+    repo_root: Path | None = None,
+    config_dir: Path = DEFAULT_CONFIG_DIR,
+) -> dict[str, Path]:
+    root = (repo_root or Path(".")).resolve()
+    config_root = (root / config_dir).resolve() if not Path(config_dir).is_absolute() else Path(config_dir).resolve()
+    labeled: dict[str, Path] = {}
+    if not config_root.exists():
+        return labeled
+
+    for pattern in ("*.yaml", "*.yml"):
+        for path in sorted(config_root.glob(pattern)):
+            if not is_catalog_yaml_path(path):
+                continue
+            payload = load_yaml_payload(path)
+            catalog_name = str(payload.get("catalog_name") or path.stem).strip()
+            label = f"catalog: {catalog_name}"
+            if label in labeled:
+                label = f"{label} [{path.stem}]"
+            labeled[label] = path.resolve()
+    return labeled
+
+
+def load_yaml_payload(path: Path) -> dict[str, Any]:
+    try:
+        payload = load_config(path)
+    except Exception:
+        return {}
+    return dict(payload) if isinstance(payload, Mapping) else {}
+
+
+def is_catalog_yaml_path(path: Path) -> bool:
+    payload = load_yaml_payload(path)
+    return is_openalex_affiliation_catalog_config(payload)
 
 
 def build_config_label(path: Path, *, root: Path, config_root: Path, preset_root: Path) -> str:
@@ -274,6 +318,21 @@ def build_config_label(path: Path, *, root: Path, config_root: Path, preset_root
     except ValueError:
         pass
     return resolved.name
+
+
+def build_catalog_option_labels(catalog_paths: Mapping[str, Path]) -> dict[str, str]:
+    option_labels: dict[str, str] = {}
+    for label, path in catalog_paths.items():
+        option_labels[repo_relative_path(path)] = label
+    return option_labels
+
+
+def repo_relative_path(path: Path) -> str:
+    resolved = path.resolve()
+    try:
+        return str(resolved.relative_to(Path(".").resolve())).replace("\\", "/")
+    except ValueError:
+        return str(resolved)
 
 
 def label_for_path(paths: Mapping[str, Path], target: Path) -> str:
@@ -324,7 +383,11 @@ def load_yaml_into_session(path: Path) -> None:
     apply_config_to_session(config)
 
 
-def render_sidebar(discovered_configs: Mapping[str, Path], current_label: str) -> None:
+def render_sidebar(
+    discovered_configs: Mapping[str, Path],
+    discovered_catalogs: Mapping[str, Path],
+    current_label: str,
+) -> None:
     st.header("YAML 선택")
     labels = list(discovered_configs.keys())
     if st.session_state.get("config_selector") not in labels:
@@ -409,6 +472,23 @@ def render_sidebar(discovered_configs: Mapping[str, Path], current_label: str) -
         help=FIELD_HELP["openreview_keywords_text"],
     )
     st.toggle("OpenAlex enrich", key="enable_openalex", help=FIELD_HELP["enable_openalex"])
+    catalog_option_labels = build_catalog_option_labels(discovered_catalogs)
+    current_catalogs = [
+        str(path).strip()
+        for path in st.session_state.get("openalex_priority_catalogs", [])
+        if str(path).strip()
+    ]
+    for catalog_path in current_catalogs:
+        catalog_option_labels.setdefault(catalog_path, f"catalog: {Path(catalog_path).stem}")
+    st.multiselect(
+        "OpenAlex priority catalogs",
+        options=list(catalog_option_labels.keys()),
+        key="openalex_priority_catalogs",
+        help=FIELD_HELP["openalex_priority_catalogs"],
+        format_func=lambda item: catalog_option_labels.get(item, item),
+    )
+    if st.session_state.get("openalex_priority_catalogs") and not st.session_state.get("enable_openalex"):
+        st.warning("OpenAlex priority catalog를 선택했지만 현재 `OpenAlex enrich`가 꺼져 있습니다.")
     if st.button("OpenAlex self-check", use_container_width=True):
         st.session_state["openalex_self_check_result"] = run_openalex_self_check_from_session()
     render_openalex_self_check_result(st.session_state.get("openalex_self_check_result"))
@@ -492,6 +572,7 @@ def apply_config_to_session(config: Mapping[str, Any]) -> None:
     st.session_state["openreview_venues_text"] = "\n".join(fetch_options.openreview_venues)
     st.session_state["openreview_keywords_text"] = "\n".join(fetch_options.openreview_keywords)
     st.session_state["enable_openalex"] = bool(fetch_options.enable_openalex)
+    st.session_state["openalex_priority_catalogs"] = list(rank_options.openalex_priority_catalogs)
     st.session_state["include_keywords_text"] = "\n".join(rank_options.include_keywords)
     st.session_state["exclude_keywords_text"] = "\n".join(rank_options.exclude_keywords)
     for weight_key in WEIGHT_KEYS:
@@ -533,6 +614,11 @@ def build_rank_options_from_session() -> RankOptions:
         weights=weights,
         buckets=buckets,
         daily_top_k=int(st.session_state["daily_top_k"]),
+        openalex_priority_catalogs=[
+            str(path).strip()
+            for path in st.session_state.get("openalex_priority_catalogs", [])
+            if str(path).strip()
+        ],
     )
 
 
@@ -655,7 +741,7 @@ def save_current_preset(name: str) -> None:
     save_config(DEFAULT_PRESET_DIR / f"{reformat_preset_name(name)}.yaml", config)
 
 
-def show_top_controls(rank_options: RankOptions, needs_refetch: bool) -> None:
+def show_top_controls(fetch_options: FetchOptions, rank_options: RankOptions, needs_refetch: bool) -> None:
     normalized_weights, raw_sum, normalized = normalize_weight_map(rank_options.weights)
     weight_line = ", ".join(f"{key}={value:.3f}" for key, value in normalized_weights.items())
     st.caption(f"현재 weight 합계: {raw_sum:.4f}")
@@ -668,6 +754,17 @@ def show_top_controls(rank_options: RankOptions, needs_refetch: bool) -> None:
         st.warning("Fetch 관련 설정이 바뀌었습니다. 현재 표는 이전 fetch 기준이고, 다시 Fetch 해야 반영됩니다.")
     else:
         st.caption("현재 fetch 설정과 저장된 snapshot이 일치합니다.")
+
+    if rank_options.openalex_priority_catalogs:
+        raw_papers = st.session_state.get("fetched_raw_papers", [])
+        has_openalex_institutions = any(
+            ((paper.get("source_metadata") or {}).get("openalex") or {}).get("institutions")
+            for paper in raw_papers
+        )
+        if not fetch_options.enable_openalex:
+            st.warning("OpenAlex priority catalog가 선택되어 있지만 현재 `OpenAlex enrich`가 꺼져 있습니다. 다시 Fetch해야 bonus가 적용됩니다.")
+        elif raw_papers and not has_openalex_institutions:
+            st.warning("현재 snapshot에는 OpenAlex affiliation metadata가 없습니다. `OpenAlex enrich`를 켠 뒤 다시 Fetch해야 기관 우선 선별이 적용됩니다.")
 
 
 def show_metrics(ranked_papers: list[Paper]) -> None:
@@ -821,6 +918,22 @@ def show_paper_detail(paper: Paper, rank_options: RankOptions) -> None:
             st.markdown(f"- Citations: `{paper.citations}`")
         if paper.review_signal is not None:
             st.markdown(f"- Review signal: `{paper.review_signal:.2f}`")
+        priority_matches = (paper.source_metadata.get("openalex") or {}).get("matched_priority_entities") or []
+        if priority_matches:
+            st.markdown("**OpenAlex priority matches**")
+            for match in priority_matches:
+                st.markdown(
+                    "- "
+                    + " / ".join(
+                        part
+                        for part in (
+                            str(match.get("catalog_name") or "").strip(),
+                            str(match.get("entity_label") or "").strip(),
+                            str(match.get("institution_display_name") or "").strip(),
+                        )
+                        if part
+                    )
+                )
         st.markdown("**Abstract**")
         st.write(paper.abstract)
 

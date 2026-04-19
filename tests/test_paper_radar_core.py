@@ -32,6 +32,7 @@ from paper_radar_core import (
     execute_pipeline,
     fetch_options_signature,
     get_config_path,
+    load_openalex_affiliation_catalog,
     load_config,
     normalize_weight_map,
     openalex_self_check,
@@ -153,6 +154,7 @@ class PaperRadarCoreTests(unittest.TestCase):
             weights={key: 1 for key in WEIGHT_KEYS},
             buckets={key: float(base_config["ranking"]["buckets"][key]) for key in BUCKET_KEYS},
             daily_top_k=5,
+            openalex_priority_catalogs=["configs/paper_radar_config_major_universities.yaml"],
         )
         digest_options = DigestOptions(
             daily_top_k=5,
@@ -174,8 +176,37 @@ class PaperRadarCoreTests(unittest.TestCase):
         self.assertEqual(build_fetch_options_from_config(loaded).queries, fetch_options.queries)
         self.assertEqual(build_fetch_options_from_config(loaded).openreview_venues, fetch_options.openreview_venues)
         self.assertEqual(build_rank_options_from_config(loaded).daily_top_k, 5)
+        self.assertEqual(
+            build_rank_options_from_config(loaded).openalex_priority_catalogs,
+            ["configs/paper_radar_config_major_universities.yaml"],
+        )
         self.assertNotIn("llm", loaded)
         self.assertEqual(loaded["digest"]["tracks"], ["manipulation", "world_model"])
+
+    def test_openalex_affiliation_catalog_loader_parses_schema(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            catalog_path = Path(tmpdir) / "major_universities.yaml"
+            save_config(
+                catalog_path,
+                {
+                    "kind": "openalex_affiliation_catalog",
+                    "catalog_name": "Major Universities",
+                    "entities": {
+                        "stanford": {
+                            "label": "Stanford University",
+                            "aliases": ["Stanford", "Stanford HAI"],
+                            "openalex_ids": ["I123"],
+                        }
+                    },
+                },
+            )
+
+            catalog = load_openalex_affiliation_catalog(catalog_path)
+
+        self.assertEqual(catalog.catalog_name, "Major Universities")
+        self.assertIn("stanford", catalog.entities)
+        self.assertIn("stanford university", catalog.entities["stanford"].normalized_aliases)
+        self.assertIn("https://openalex.org/i123", catalog.entities["stanford"].normalized_openalex_ids)
 
     def test_openreview_extracts_metadata_and_review_signal(self) -> None:
         now_ms = int(dt.datetime.now(dt.timezone.utc).timestamp() * 1000)
@@ -266,6 +297,17 @@ class PaperRadarCoreTests(unittest.TestCase):
                         "primary_topic": {"display_name": "Robot Learning"},
                         "concepts": [{"display_name": "World Models"}],
                         "open_access": {"is_oa": True, "oa_url": "https://example.com/openalex.pdf"},
+                        "authorships": [
+                            {
+                                "institutions": [
+                                    {
+                                        "id": "https://openalex.org/I123",
+                                        "display_name": "Stanford University",
+                                        "ror": "https://ror.org/00f54p054",
+                                    }
+                                ]
+                            }
+                        ],
                     }
                 ]
             }
@@ -280,6 +322,16 @@ class PaperRadarCoreTests(unittest.TestCase):
         self.assertEqual(enriched[0].venue, "OpenReview")
         self.assertEqual(enriched[0].doi, "10.1000/openalex")
         self.assertIn("World Models", enriched[0].topics)
+        self.assertEqual(
+            enriched[0].source_metadata["openalex"]["institutions"],
+            [
+                {
+                    "id": "https://openalex.org/i123",
+                    "display_name": "Stanford University",
+                    "ror": "https://ror.org/00f54p054",
+                }
+            ],
+        )
 
     def test_openalex_self_check_reports_missing_env(self) -> None:
         result = openalex_self_check(env={})
@@ -368,6 +420,67 @@ class PaperRadarCoreTests(unittest.TestCase):
                 enrich_openalex([paper], fetch_options, env={"OPENALEX_API_KEY": "secret-key"}, sleep_s=0.0)
 
         self.assertEqual(mock_get.call_args.kwargs["params"]["api_key"], "secret-key")
+
+    def test_openalex_priority_catalog_bonus_applies_once_and_records_matches(self) -> None:
+        paper = make_paper("Optimization paper", "Optimization and training dynamics.")
+        paper.source_metadata["openalex"] = {
+            "institutions": [
+                {"id": None, "display_name": "Stanford University", "ror": None},
+                {"id": None, "display_name": "OpenAI", "ror": None},
+            ]
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir_path = Path(tmpdir)
+            universities_path = tmpdir_path / "major_universities.yaml"
+            labs_path = tmpdir_path / "major_labs.yaml"
+            save_config(
+                universities_path,
+                {
+                    "kind": "openalex_affiliation_catalog",
+                    "catalog_name": "Major Universities",
+                    "entities": {
+                        "stanford": {
+                            "label": "Stanford University",
+                            "aliases": ["Stanford"],
+                        }
+                    },
+                },
+            )
+            save_config(
+                labs_path,
+                {
+                    "kind": "openalex_affiliation_catalog",
+                    "catalog_name": "Major Labs",
+                    "entities": {
+                        "openai": {
+                            "label": "OpenAI",
+                            "aliases": ["OpenAI"],
+                        }
+                    },
+                },
+            )
+
+            baseline = rank_papers(
+                assign_tracks([paper], self.digest_options),
+                self.default_rank_options,
+            )[0]
+            boosted = rank_papers(
+                assign_tracks([paper], self.digest_options),
+                RankOptions(
+                    include_keywords=self.default_rank_options.include_keywords,
+                    exclude_keywords=self.default_rank_options.exclude_keywords,
+                    weights=self.default_rank_options.weights,
+                    buckets=self.default_rank_options.buckets,
+                    daily_top_k=self.default_rank_options.daily_top_k,
+                    openalex_priority_catalogs=[str(universities_path), str(labs_path)],
+                ),
+            )[0]
+
+        self.assertEqual(baseline.source_signal_score, 20.0)
+        self.assertEqual(boosted.source_signal_score, 45.0)
+        self.assertEqual(len(boosted.source_metadata["openalex"]["matched_priority_entities"]), 2)
+        self.assertAlmostEqual(boosted.final_score - baseline.final_score, 2.5, places=2)
 
     def test_assign_tracks_and_digest_support_multilabel(self) -> None:
         paper = make_paper(
@@ -523,6 +636,8 @@ class PaperRadarCoreTests(unittest.TestCase):
         self.assertNotIn("llm", diff)
         self.assertEqual(diff["weights"], {})
         self.assertEqual(diff["buckets"], {})
+        self.assertEqual(diff["ranking"]["openalex_priority_catalogs_only_in_a"], [])
+        self.assertEqual(diff["ranking"]["openalex_priority_catalogs_only_in_b"], [])
 
     def test_old_snapshot_extra_keys_do_not_break_loader(self) -> None:
         payload = asdict_like(make_paper("Robot paper", "Abstract"))

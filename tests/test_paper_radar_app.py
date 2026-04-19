@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from paper_radar_app import (
     discover_config_yaml_paths,
+    discover_priority_catalog_paths,
     initialize_session,
     reset_session_state_for_config,
     run_openalex_self_check_from_session,
@@ -25,12 +26,20 @@ class PaperRadarAppHelperTests(unittest.TestCase):
 
             base_config = config_dir / "robotics.yaml"
             alt_config = config_dir / "fundamental_ml.yaml"
+            catalog = config_dir / "major_universities.yaml"
             prompts = config_dir / "paper_radar_prompts.example.yaml"
             other_yaml = root / "notes.yaml"
             preset = preset_dir / "robot.yaml"
 
-            for path in (base_config, alt_config, prompts, other_yaml, preset):
-                path.write_text("project:\n  name: demo\n", encoding="utf-8")
+            base_config.write_text("project:\n  name: demo\n", encoding="utf-8")
+            alt_config.write_text("project:\n  name: demo\n", encoding="utf-8")
+            prompts.write_text("project:\n  name: demo\n", encoding="utf-8")
+            other_yaml.write_text("project:\n  name: demo\n", encoding="utf-8")
+            preset.write_text("project:\n  name: demo\n", encoding="utf-8")
+            catalog.write_text(
+                "kind: openalex_affiliation_catalog\ncatalog_name: Major Universities\nentities:\n  stanford:\n    label: Stanford University\n    aliases:\n      - Stanford\n",
+                encoding="utf-8",
+            )
 
             discovered = discover_config_yaml_paths(repo_root=root, config_dir=config_dir, preset_dir=preset_dir)
             discovered_paths = set(discovered.values())
@@ -38,8 +47,25 @@ class PaperRadarAppHelperTests(unittest.TestCase):
             self.assertIn(base_config.resolve(), discovered_paths)
             self.assertIn(alt_config.resolve(), discovered_paths)
             self.assertIn(preset.resolve(), discovered_paths)
+            self.assertNotIn(catalog.resolve(), discovered_paths)
             self.assertNotIn(prompts.resolve(), discovered_paths)
             self.assertNotIn(other_yaml.resolve(), discovered_paths)
+
+    def test_discover_priority_catalog_paths_includes_only_catalogs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            config_dir = root / "configs"
+            config_dir.mkdir(parents=True)
+            (config_dir / "robotics.yaml").write_text("project:\n  name: demo\n", encoding="utf-8")
+            catalog = config_dir / "major_research_labs.yaml"
+            catalog.write_text(
+                "kind: openalex_affiliation_catalog\ncatalog_name: Major Labs\nentities:\n  openai:\n    label: OpenAI\n    aliases:\n      - OpenAI\n",
+                encoding="utf-8",
+            )
+
+            discovered = discover_priority_catalog_paths(repo_root=root, config_dir=config_dir)
+
+        self.assertEqual(list(discovered.values()), [catalog.resolve()])
 
     def test_reset_session_state_for_config_clears_only_runtime_keys(self) -> None:
         state = {

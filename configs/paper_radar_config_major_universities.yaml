@@ -1,248 +1,49 @@
-project:
-  name: paper-radar-major-universities-proxy-authors
-  language: ko
-  timezone: Asia/Seoul
-curation:
-  generated_at: '2026-04-18'
-  selection_policy:
-  - 이 preset은 current paper-radar 코드가 arXiv search_query 문자열을 그대로 전달하는 구조를 이용한다.
-  - 'arXiv에서는 au: author field를 공식 지원하므로, 대학 검색은 소속명 직접 검색 대신 대표 연구자 proxy-author 방식으로 구성했다.'
-  - 대학 선정은 CSRankings/주요 글로벌 CS 랭킹에 반복적으로 등장하는 기관과 실제 arXiv 출력이 많은 그룹을 우선했다.
-  - 엄격한 affiliation 검색이 필요하면 수집기를 affiliation-aware source로 확장하는 것이 더 적합하다.
-  proxy_author_mode: true
-  institutions:
-    stanford_university:
-      label: Stanford University / Stanford HAI / SAIL
-      proxy_authors:
-      - Percy Liang
-      - Christopher D Manning
-      - Dan Jurafsky
-      - Stefano Ermon
-      - Tengyu Ma
-      - Fei-Fei Li
-    mit:
-      label: MIT / CSAIL
-      proxy_authors:
-      - Tommi Jaakkola
-      - Stefanie Jegelka
-      - Jacob Andreas
-      - Aleksander Madry
-      - Phillip Isola
-    uc_berkeley:
-      label: UC Berkeley / BAIR
-      proxy_authors:
-      - Michael I Jordan
-      - Peter L Bartlett
-      - Jacob Steinhardt
-      - Stuart Russell
-      - Ion Stoica
-    carnegie_mellon_university:
-      label: Carnegie Mellon University
-      proxy_authors:
-      - Ruslan Salakhutdinov
-      - Zico Kolter
-      - Graham Neubig
-      - Aarti Singh
-    university_of_toronto:
-      label: University of Toronto
-      proxy_authors:
-      - Geoffrey Hinton
-      - Jimmy Ba
-      - Roger Grosse
-      - David Duvenaud
-      - Richard Zemel
-    university_of_cambridge:
-      label: University of Cambridge
-      proxy_authors:
-      - Zoubin Ghahramani
-      - Neil Lawrence
-      - Jose Miguel Hernandez-Lobato
-      - Richard Turner
-    university_of_oxford:
-      label: University of Oxford
-      proxy_authors:
-      - Yarin Gal
-      - Michael Bronstein
-      - Yee Whye Teh
-    eth_zurich:
-      label: ETH Zurich / related fundamental ML groups
-      proxy_authors:
-      - Bernhard Schoelkopf
-      - Thomas Hofmann
-      - Andreas Krause
-      - Fanny Yang
-      - Gunnar Raetsch
-    universite_de_montreal:
-      label: Université de Montréal / affiliated core ML faculty
-      proxy_authors:
-      - Yoshua Bengio
-      - Aaron Courville
-      - Doina Precup
-      - Guillaume Alain
-sources:
-  arxiv:
-    enabled: true
-    categories:
-    - cs.LG
-    - stat.ML
-    - cs.CL
-    - cs.AI
-    - cs.CV
-    - cs.IR
-    - math.OC
-    - math.ST
-    queries:
-    - (au:"Percy Liang" OR au:"Christopher D Manning" OR au:"Dan Jurafsky" OR au:"Stefano Ermon" OR au:"Tengyu Ma" OR au:"Fei-Fei Li")
-    - (au:"Tommi Jaakkola" OR au:"Stefanie Jegelka" OR au:"Jacob Andreas" OR au:"Aleksander Madry" OR au:"Phillip Isola")
-    - (au:"Michael I Jordan" OR au:"Peter L Bartlett" OR au:"Jacob Steinhardt" OR au:"Stuart Russell" OR au:"Ion Stoica")
-    - (au:"Ruslan Salakhutdinov" OR au:"Zico Kolter" OR au:"Graham Neubig" OR au:"Aarti Singh")
-    - (au:"Geoffrey Hinton" OR au:"Jimmy Ba" OR au:"Roger Grosse" OR au:"David Duvenaud" OR au:"Richard Zemel")
-    - (au:"Zoubin Ghahramani" OR au:"Neil Lawrence" OR au:"Jose Miguel Hernandez-Lobato" OR au:"Richard Turner")
-    - (au:"Yarin Gal" OR au:"Michael Bronstein" OR au:"Yee Whye Teh")
-    - (au:"Bernhard Schoelkopf" OR au:"Thomas Hofmann" OR au:"Andreas Krause" OR au:"Fanny Yang" OR au:"Gunnar Raetsch")
-    - (au:"Yoshua Bengio" OR au:"Aaron Courville" OR au:"Doina Precup" OR au:"Guillaume Alain")
-    days_back_daily: 21
-    days_back_weekly: 90
-    max_results_per_query: 12
-  openreview:
-    enabled: false
-    venues: []
-    keywords: []
-  semanticscholar:
-    enabled: true
-    api_key_env: SEMANTIC_SCHOLAR_API_KEY
-  openalex:
-    enabled: true
-    api_key_env: OPENALEX_API_KEY
-filters:
-  include_keywords:
-  - machine learning
-  - deep learning
-  - foundation model
-  - large language model
-  - llm
-  - language model
-  - pretraining
-  - post-training
-  - alignment
-  - reward model
-  - preference optimization
-  - RLHF
-  - DPO
-  - reasoning
-  - chain-of-thought
-  - in-context learning
-  - scaling law
-  - training dynamics
-  - optimization
-  - generalization
-  - convergence
-  - sample complexity
-  - implicit bias
-  - representation learning
-  - self-supervised
-  - contrastive
-  - masked modeling
-  - mechanistic interpretability
-  - probing
-  - circuits
-  - data curation
-  - data filtering
-  - data selection
-  - data mixture
-  - synthetic data
-  - deduplication
-  - data quality
-  - contamination
-  - tokenization
-  - benchmark
-  - evaluation
-  - probabilistic
-  - bayesian
-  - causal
-  - distribution shift
-  - robustness
-  - multimodal
-  - vision-language model
-  - distillation
-  exclude_keywords:
-  - robot
-  - robotics
-  - humanoid
-  - manipulation
-  - teleoperation
-  - autonomous driving
-  - medical imaging
-  - clinical
-  - protein
-  - molecule
-  - drug discovery
-  - genomics
-  - survey
-  - editorial
-  - position paper
-ranking:
-  weights:
-    relevance: 0.38
-    novelty: 0.18
-    empirical: 0.07
-    source_signal: 0.08
-    momentum: 0.12
-    recency: 0.17
-    actionability: 0.0
-  buckets:
-    must_read: 80
-    worth_reading: 64
-    skim: 48
-digest:
-  daily_top_k: 12
-  weekly_top_k_per_track: 8
-  tracks:
-  - ml_theory
-  - optimization_and_generalization
-  - llm_foundations
-  - data_and_curation
-  - representation_learning
-  - alignment_and_posttraining
-  - mechanistic_interpretability
-  - multimodal_foundation_models
-  track_definitions:
-    optimization_and_generalization:
-      label: Optimization & Generalization
-      keywords:
-      - optimization
-      - generalization
-      - convergence
-      - sample complexity
-      - implicit bias
-      - training dynamics
-      - scaling law
-    data_and_curation:
-      label: Data & Curation
-      keywords:
-      - data curation
-      - data filtering
-      - data selection
-      - data quality
-      - dataset
-      - synthetic data
-      - deduplication
-      - contamination
-      - tokenization
-    mechanistic_interpretability:
-      label: Mechanistic Interpretability
-      keywords:
-      - mechanistic interpretability
-      - circuits
-      - superposition
-      - feature geometry
-      - probing
-    multimodal_foundation_models:
-      label: Multimodal Foundation Models
-      keywords:
-      - multimodal
-      - vision-language model
-      - vision language model
-      - foundation model
-      - image-text
-      - video-language
+kind: openalex_affiliation_catalog
+catalog_name: Major Universities
+entities:
+  stanford_university:
+    label: Stanford University
+    aliases:
+      - Stanford
+      - Stanford HAI
+      - Stanford Artificial Intelligence Laboratory
+      - SAIL
+  mit:
+    label: Massachusetts Institute of Technology
+    aliases:
+      - MIT
+      - CSAIL
+  uc_berkeley:
+    label: University of California, Berkeley
+    aliases:
+      - UC Berkeley
+      - Berkeley
+      - Berkeley Artificial Intelligence Research
+      - BAIR
+  carnegie_mellon_university:
+    label: Carnegie Mellon University
+    aliases:
+      - CMU
+  university_of_toronto:
+    label: University of Toronto
+    aliases:
+      - U of T
+      - Toronto
+  university_of_cambridge:
+    label: University of Cambridge
+    aliases:
+      - Cambridge
+  university_of_oxford:
+    label: University of Oxford
+    aliases:
+      - Oxford
+  eth_zurich:
+    label: ETH Zurich
+    aliases:
+      - ETH
+      - ETH Zürich
+      - Swiss Federal Institute of Technology Zurich
+  universite_de_montreal:
+    label: Universite de Montreal
+    aliases:
+      - Université de Montréal

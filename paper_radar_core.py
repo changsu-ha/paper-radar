@@ -49,6 +49,8 @@ WEIGHT_KEYS = (
 BUCKET_KEYS = ("must_read", "worth_reading", "skim")
 TRACK_UNASSIGNED = "unassigned"
 SOURCE_PRIORITY = {"openreview": 4, "arxiv": 3, "openalex": 2, "semanticscholar": 1}
+OPENALEX_AFFILIATION_CATALOG_KIND = "openalex_affiliation_catalog"
+OPENALEX_PRIORITY_BONUS = 25.0
 
 BUILTIN_TRACK_DEFINITIONS: dict[str, dict[str, Any]] = {
     "vla": {
@@ -231,6 +233,24 @@ class RankOptions:
     weights: dict[str, float]
     buckets: dict[str, float]
     daily_top_k: int
+    openalex_priority_catalogs: list[str] = field(default_factory=list)
+
+
+@dataclass
+class OpenAlexAffiliationEntity:
+    key: str
+    label: str
+    aliases: list[str] = field(default_factory=list)
+    openalex_ids: list[str] = field(default_factory=list)
+    normalized_aliases: set[str] = field(default_factory=set)
+    normalized_openalex_ids: set[str] = field(default_factory=set)
+
+
+@dataclass
+class OpenAlexAffiliationCatalog:
+    path: str
+    catalog_name: str
+    entities: dict[str, OpenAlexAffiliationEntity]
 
 
 @dataclass
@@ -314,6 +334,76 @@ def save_config(path: str | Path, config: dict[str, Any]) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
     with open(target, "w", encoding="utf-8") as f:
         yaml.safe_dump(config, f, allow_unicode=True, sort_keys=False)
+
+
+def is_openalex_affiliation_catalog_config(config: Mapping[str, Any]) -> bool:
+    return str(config.get("kind") or "").strip() == OPENALEX_AFFILIATION_CATALOG_KIND
+
+
+def load_openalex_affiliation_catalog(path: str | Path) -> OpenAlexAffiliationCatalog:
+    resolved = resolve_config_path(path)
+    payload = load_config(resolved)
+    if not is_openalex_affiliation_catalog_config(payload):
+        raise ValueError(f"{resolved} is not an {OPENALEX_AFFILIATION_CATALOG_KIND} file.")
+
+    catalog_name = str(payload.get("catalog_name") or resolved.stem).strip()
+    entities_cfg = payload.get("entities")
+    if not isinstance(entities_cfg, Mapping) or not entities_cfg:
+        raise ValueError(f"{resolved} does not define any catalog entities.")
+
+    entities: dict[str, OpenAlexAffiliationEntity] = {}
+    for entity_key, entity_value in entities_cfg.items():
+        if not isinstance(entity_value, Mapping):
+            raise ValueError(f"{resolved} has an invalid entity entry for {entity_key!r}.")
+        key = str(entity_key).strip()
+        label = str(entity_value.get("label") or key).strip()
+        aliases_cfg = entity_value.get("aliases", [])
+        if isinstance(aliases_cfg, str):
+            aliases_cfg = [aliases_cfg]
+        ids_cfg = entity_value.get("openalex_ids", [])
+        if isinstance(ids_cfg, str):
+            ids_cfg = [ids_cfg]
+        aliases = [str(item).strip() for item in aliases_cfg if str(item).strip()]
+        openalex_ids = [
+            normalized_id
+            for normalized_id in (
+                normalize_openalex_id(item) for item in ids_cfg
+            )
+            if normalized_id
+        ]
+        normalized_aliases = {
+            normalized
+            for normalized in (
+                normalize_affiliation_name(name) for name in [label, *aliases]
+            )
+            if normalized
+        }
+        if not normalized_aliases and not openalex_ids:
+            raise ValueError(f"{resolved} entity {key!r} has no usable aliases or OpenAlex ids.")
+        entities[key] = OpenAlexAffiliationEntity(
+            key=key,
+            label=label,
+            aliases=aliases,
+            openalex_ids=openalex_ids,
+            normalized_aliases=normalized_aliases,
+            normalized_openalex_ids=set(openalex_ids),
+        )
+
+    return OpenAlexAffiliationCatalog(
+        path=_make_repo_relative_path(resolved),
+        catalog_name=catalog_name,
+        entities=entities,
+    )
+
+
+def load_openalex_affiliation_catalogs(paths: Iterable[str | Path]) -> list[OpenAlexAffiliationCatalog]:
+    catalogs: list[OpenAlexAffiliationCatalog] = []
+    for path in paths:
+        try:
+            catalogs.append(load_openalex_affiliation_catalog(path))
+        except (FileNotFoundError, ValueError, OSError) as exc:
+            _warn(f"[warn] OpenAlex affiliation catalog load failed for {path!r}: {exc}")
+    return catalogs
 
 
 def _warn(message: str) -> None:
@@ -450,6 +540,38 @@ def normalize_title(title: str) -> str:
     return text
 
 
+def normalize_affiliation_name(value: str | None) -> str:
+    if not value:
+        return ""
+    text = str(value).casefold().strip()
+    text = re.sub(r"[^0-9a-z]+", " ", text)
+    text = re.sub(r"\s+", " ", text)
+    return text
+
+
+def normalize_openalex_id(value: str | None) -> str:
+    if not value:
+        return ""
+    text = str(value).strip().rstrip("/")
+    if not text:
+        return ""
+    lowered = text.casefold()
+    if lowered.startswith("https://openalex.org/"):
+        return lowered
+    if re.fullmatch(r"[a-z]\d+", lowered):
+        return f"https://openalex.org/{lowered}"
+    return lowered
+
+
+def _make_repo_relative_path(path: str | Path, root: Path | None = None) -> str:
+    resolved = Path(path).expanduser().resolve()
+    repo_root = (root or Path(".")).resolve()
+    try:
+        return str(resolved.relative_to(repo_root)).replace("\\", "/")
+    except ValueError:
+        return str(resolved)
+
+
 def split_multiline_list(value: str) -> list[str]:
     return [part.strip() for part in value.splitlines() if part.strip()]
 
@@ -520,12 +642,21 @@ def build_fetch_options_from_config(config: Mapping[str, Any]) -> FetchOptions:
 
 
 def build_rank_options_from_config(config: Mapping[str, Any]) -> RankOptions:
+    ranking_cfg = config.get("ranking", {})
+    priority_catalogs_cfg = ranking_cfg.get("openalex_priority_catalogs", [])
+    if isinstance(priority_catalogs_cfg, str):
+        priority_catalogs_cfg = [priority_catalogs_cfg]
     return RankOptions(
         include_keywords=parse_keywords_input(config.get("filters", {}).get("include_keywords", [])),
         exclude_keywords=parse_keywords_input(config.get("filters", {}).get("exclude_keywords", [])),
-        weights={key: float(config.get("ranking", {}).get("weights", {}).get(key, 0.0)) for key in WEIGHT_KEYS},
-        buckets={key: float(config.get("ranking", {}).get("buckets", {}).get(key, 0.0)) for key in BUCKET_KEYS},
+        weights={key: float(ranking_cfg.get("weights", {}).get(key, 0.0)) for key in WEIGHT_KEYS},
+        buckets={key: float(ranking_cfg.get("buckets", {}).get(key, 0.0)) for key in BUCKET_KEYS},
         daily_top_k=int(config.get("digest", {}).get("daily_top_k", 8)),
+        openalex_priority_catalogs=[
+            str(path).strip()
+            for path in priority_catalogs_cfg
+            if str(path).strip()
+        ],
     )
 
 
@@ -598,6 +729,11 @@ def build_config_from_options(
     config["filters"]["exclude_keywords"] = list(rank_options.exclude_keywords)
     config["ranking"]["weights"] = normalized_weights
     config["ranking"]["buckets"] = {key: float(rank_options.buckets.get(key, 0.0)) for key in BUCKET_KEYS}
+    priority_catalogs = [str(path).strip() for path in rank_options.openalex_priority_catalogs if str(path).strip()]
+    if priority_catalogs:
+        config["ranking"]["openalex_priority_catalogs"] = priority_catalogs
+    else:
+        config["ranking"].pop("openalex_priority_catalogs", None)
     config["digest"]["daily_top_k"] = int(rank_options.daily_top_k)
     config.pop("llm", None)
 
@@ -641,11 +777,13 @@ def describe_keyword_hits(paper: Paper, rank_options: RankOptions) -> dict[str, 
     text = _paper_text(paper)
     include_hits = [kw for kw in rank_options.include_keywords if kw in text]
     exclude_hits = [kw for kw in rank_options.exclude_keywords if kw in text]
+    priority_matches = (paper.source_metadata.get("openalex") or {}).get("matched_priority_entities") or []
     return {
         "include_hits": include_hits,
         "exclude_hits": exclude_hits,
         "primary_track": paper.primary_track,
         "track_ids": list(paper.track_ids),
+        "openalex_priority_matches": [dict(match) for match in priority_matches],
     }
 
 
@@ -665,6 +803,15 @@ def papers_to_records(papers: Iterable[Paper]) -> list[dict[str, Any]]:
                 "venue": paper.venue,
                 "decision": paper.decision,
                 "review_signal": paper.review_signal,
+                "priority_match": ", ".join(
+                    sorted(
+                        {
+                            str(match.get("entity_label") or match.get("institution_display_name") or "").strip()
+                            for match in ((paper.source_metadata.get("openalex") or {}).get("matched_priority_entities") or [])
+                            if str(match.get("entity_label") or match.get("institution_display_name") or "").strip()
+                        }
+                    )
+                ),
                 "url": paper.url,
             }
         )
@@ -1205,6 +1352,7 @@ class OpenAlexClient:
             for concept in (candidate.get("concepts") or [])
             if concept.get("display_name")
         ]
+        institutions = extract_openalex_institutions(candidate)
         paper.topics = list(dict.fromkeys([*paper.topics, *topics, *concepts]))
         if not paper.pdf_url:
             open_access = candidate.get("open_access") or {}
@@ -1220,6 +1368,7 @@ class OpenAlexClient:
                     "primary_location": source.get("display_name"),
                     "oa_status": (candidate.get("open_access") or {}).get("oa_status"),
                     "is_oa": (candidate.get("open_access") or {}).get("is_oa"),
+                    "institutions": institutions,
                 }
             },
         )
@@ -1257,6 +1406,28 @@ class OpenAlexClient:
             _warn(f"[warn] OpenAlex lookup failed for {params!r}: {exc}")
             return {}
         return data
+
+
+def extract_openalex_institutions(candidate: Mapping[str, Any]) -> list[dict[str, str | None]]:
+    institutions: list[dict[str, str | None]] = []
+    seen: set[tuple[str, str]] = set()
+    for authorship in candidate.get("authorships") or []:
+        for institution in authorship.get("institutions") or []:
+            institution_id = normalize_openalex_id(institution.get("id"))
+            display_name = str(institution.get("display_name") or "").strip()
+            ror = str(institution.get("ror") or "").strip() or None
+            dedupe_key = (institution_id, normalize_affiliation_name(display_name))
+            if dedupe_key in seen or not (institution_id or display_name):
+                continue
+            seen.add(dedupe_key)
+            institutions.append(
+                {
+                    "id": institution_id or None,
+                    "display_name": display_name or None,
+                    "ror": ror,
+                }
+            )
+    return institutions
 
 
 def openalex_self_check(
@@ -1374,12 +1545,63 @@ def _mask_api_key(value: str | None) -> str | None:
     return f"{value[:3]}...{value[-3:]}"
 
 
+def match_openalex_priority_entities(
+    paper: Paper,
+    catalogs: Sequence[OpenAlexAffiliationCatalog],
+) -> list[dict[str, str | None]]:
+    openalex_meta = paper.source_metadata.get("openalex") or {}
+    institutions = openalex_meta.get("institutions") or []
+    if not catalogs or not institutions:
+        return []
+
+    matches: list[dict[str, str | None]] = []
+    seen: set[tuple[str, str, str, str]] = set()
+    for institution in institutions:
+        institution_id = normalize_openalex_id(institution.get("id"))
+        institution_name = str(institution.get("display_name") or "").strip()
+        normalized_name = normalize_affiliation_name(institution_name)
+        for catalog in catalogs:
+            for entity in catalog.entities.values():
+                match_type: str | None = None
+                if institution_id and institution_id in entity.normalized_openalex_ids:
+                    match_type = "openalex_id"
+                elif normalized_name and normalized_name in entity.normalized_aliases:
+                    match_type = "alias"
+                if not match_type:
+                    continue
+                dedupe_key = (catalog.path, entity.key, institution_id, normalized_name)
+                if dedupe_key in seen:
+                    continue
+                seen.add(dedupe_key)
+                matches.append(
+                    {
+                        "catalog_name": catalog.catalog_name,
+                        "catalog_path": catalog.path,
+                        "entity_key": entity.key,
+                        "entity_label": entity.label,
+                        "institution_id": institution_id or None,
+                        "institution_display_name": institution_name or None,
+                        "match_type": match_type,
+                    }
+                )
+    return matches
+
+
+def set_openalex_priority_matches(paper: Paper, matches: Sequence[Mapping[str, Any]]) -> None:
+    openalex_meta = copy.deepcopy(dict(paper.source_metadata.get("openalex") or {}))
+    if not openalex_meta and not matches:
+        return
+    openalex_meta["matched_priority_entities"] = [dict(item) for item in matches]
+    paper.source_metadata = merge_source_metadata(paper.source_metadata, {"openalex": openalex_meta})
+
+
 class RuleRanker:
     def __init__(self, rank_options: RankOptions) -> None:
         self.include_keywords = [kw.lower() for kw in rank_options.include_keywords]
         self.exclude_keywords = [kw.lower() for kw in rank_options.exclude_keywords]
         self.weights, _, _ = normalize_weight_map(rank_options.weights)
         self.buckets = rank_options.buckets
+        self.openalex_priority_catalogs = load_openalex_affiliation_catalogs(rank_options.openalex_priority_catalogs)
 
     def score(self, paper: Paper) -> Paper:
         text = _paper_text(paper)
@@ -1479,6 +1701,10 @@ class RuleRanker:
             score += 5.0
         if "benchmark" in text or "dataset" in text:
             score += 5.0
+        priority_matches = match_openalex_priority_entities(paper, self.openalex_priority_catalogs)
+        set_openalex_priority_matches(paper, priority_matches)
+        if priority_matches:
+            score += OPENALEX_PRIORITY_BONUS
         return min(100.0, score)
 
     def _bucket(self, score: float) -> str:
@@ -2143,6 +2369,14 @@ def diff_configs(config_a: Mapping[str, Any], config_b: Mapping[str, Any]) -> di
             key: {"a": rank_a.buckets.get(key), "b": rank_b.buckets.get(key)}
             for key in BUCKET_KEYS
             if not math.isclose(rank_a.buckets.get(key, 0.0), rank_b.buckets.get(key, 0.0), abs_tol=1e-9)
+        },
+        "ranking": {
+            "openalex_priority_catalogs_only_in_a": sorted(
+                set(rank_a.openalex_priority_catalogs) - set(rank_b.openalex_priority_catalogs)
+            ),
+            "openalex_priority_catalogs_only_in_b": sorted(
+                set(rank_b.openalex_priority_catalogs) - set(rank_a.openalex_priority_catalogs)
+            ),
         },
         "digest": {
             "tracks_only_in_a": sorted(set(digest_a.tracks) - set(digest_b.tracks)),

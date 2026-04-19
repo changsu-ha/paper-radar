@@ -1,250 +1,46 @@
-project:
-  name: paper-radar-major-research-labs-proxy-authors
-  language: ko
-  timezone: Asia/Seoul
-curation:
-  generated_at: '2026-04-18'
-  selection_policy:
-  - 이 preset은 연구소/랩 단위 소속명 검색 대신 대표 연구자 proxy-author 방식으로 구성했다.
-  - 'paper-radar의 현재 arXiv collector는 raw query를 search_query로 전달하므로 au: author field 기반 검색이 가장 실용적이다.'
-  - 랩 선정은 공개 연구 output과 foundational ML / LLM / data relevance를 기준으로 골랐다.
-  proxy_author_mode: true
-  research_labs:
-    google_deepmind:
-      label: Google DeepMind
-      proxy_authors:
-      - Jeff Dean
-      - Quoc Le
-      - Noam Shazeer
-      - Oriol Vinyals
-      - Yee Whye Teh
-      - Pushmeet Kohli
-    openai:
-      label: OpenAI
-      proxy_authors:
-      - Mark Chen
-      - Noam Brown
-      - Jason Wei
-      - Hyung Won Chung
-      - Ilge Akkaya
-    anthropic:
-      label: Anthropic
-      proxy_authors:
-      - Jared Kaplan
-      - Chris Olah
-      - Sam Bowman
-      - Amanda Askell
-      - Tom Henighan
-      - Trenton Bricken
-    meta_fair:
-      label: Meta FAIR / Meta Research
-      proxy_authors:
-      - Yann LeCun
-      - Joelle Pineau
-      - Jason Weston
-      - Antoine Bordes
-      - Douwe Kiela
-      - Luke Zettlemoyer
-    microsoft_research:
-      label: Microsoft Research
-      proxy_authors:
-      - Christopher M Bishop
-      - Sebastien Bubeck
-      - Jianfeng Gao
-      - Eric Horvitz
-      - Harsha Nori
-    ai2:
-      label: Allen Institute for AI (Ai2)
-      proxy_authors:
-      - Yejin Choi
-      - Ali Farhadi
-      - Noah Smith
-      - Hanna Hajishirzi
-    mila:
-      label: Mila - Quebec AI Institute
-      proxy_authors:
-      - Yoshua Bengio
-      - Aaron Courville
-      - Doina Precup
-      - Guillaume Alain
-    vector_institute:
-      label: Vector Institute
-      proxy_authors:
-      - Geoffrey Hinton
-      - Roger Grosse
-      - Jimmy Ba
-      - Richard Zemel
-      - Raquel Urtasun
-    nvidia_research:
-      label: NVIDIA Research
-      proxy_authors:
-      - Sanja Fidler
-      - Bryan Catanzaro
-      - Ming-Yu Liu
-sources:
-  arxiv:
-    enabled: true
-    categories:
-    - cs.LG
-    - stat.ML
-    - cs.CL
-    - cs.AI
-    - cs.CV
-    - cs.IR
-    - math.OC
-    - math.ST
-    queries:
-    - (au:"Jeff Dean" OR au:"Quoc Le" OR au:"Noam Shazeer" OR au:"Oriol Vinyals" OR au:"Yee Whye Teh" OR au:"Pushmeet Kohli")
-    - (au:"Mark Chen" OR au:"Noam Brown" OR au:"Jason Wei" OR au:"Hyung Won Chung" OR au:"Ilge Akkaya")
-    - (au:"Jared Kaplan" OR au:"Chris Olah" OR au:"Sam Bowman" OR au:"Amanda Askell" OR au:"Tom Henighan" OR au:"Trenton Bricken")
-    - (au:"Yann LeCun" OR au:"Joelle Pineau" OR au:"Jason Weston" OR au:"Antoine Bordes" OR au:"Douwe Kiela" OR au:"Luke Zettlemoyer")
-    - (au:"Christopher M Bishop" OR au:"Sebastien Bubeck" OR au:"Jianfeng Gao" OR au:"Eric Horvitz" OR au:"Harsha Nori")
-    - (au:"Yejin Choi" OR au:"Ali Farhadi" OR au:"Noah Smith" OR au:"Hanna Hajishirzi")
-    - (au:"Yoshua Bengio" OR au:"Aaron Courville" OR au:"Doina Precup" OR au:"Guillaume Alain")
-    - (au:"Geoffrey Hinton" OR au:"Roger Grosse" OR au:"Jimmy Ba" OR au:"Richard Zemel" OR au:"Raquel Urtasun")
-    - (au:"Sanja Fidler" OR au:"Bryan Catanzaro" OR au:"Ming-Yu Liu")
-    days_back_daily: 21
-    days_back_weekly: 90
-    max_results_per_query: 12
-  openreview:
-    enabled: false
-    venues: []
-    keywords: []
-  semanticscholar:
-    enabled: true
-    api_key_env: SEMANTIC_SCHOLAR_API_KEY
-  openalex:
-    enabled: true
-    api_key_env: OPENALEX_API_KEY
-filters:
-  include_keywords:
-  - machine learning
-  - deep learning
-  - foundation model
-  - large language model
-  - llm
-  - language model
-  - pretraining
-  - post-training
-  - alignment
-  - reward model
-  - preference optimization
-  - RLHF
-  - DPO
-  - reasoning
-  - chain-of-thought
-  - in-context learning
-  - scaling law
-  - training dynamics
-  - optimization
-  - generalization
-  - convergence
-  - sample complexity
-  - implicit bias
-  - representation learning
-  - self-supervised
-  - contrastive
-  - masked modeling
-  - mechanistic interpretability
-  - probing
-  - circuits
-  - data curation
-  - data filtering
-  - data selection
-  - data mixture
-  - synthetic data
-  - deduplication
-  - data quality
-  - contamination
-  - tokenization
-  - benchmark
-  - evaluation
-  - probabilistic
-  - bayesian
-  - causal
-  - distribution shift
-  - robustness
-  - multimodal
-  - vision-language model
-  - distillation
-  exclude_keywords:
-  - robot
-  - robotics
-  - humanoid
-  - manipulation
-  - teleoperation
-  - autonomous driving
-  - medical imaging
-  - clinical
-  - protein
-  - molecule
-  - drug discovery
-  - genomics
-  - survey
-  - editorial
-  - position paper
-ranking:
-  weights:
-    relevance: 0.38
-    novelty: 0.18
-    empirical: 0.07
-    source_signal: 0.08
-    momentum: 0.12
-    recency: 0.17
-    actionability: 0.0
-  buckets:
-    must_read: 80
-    worth_reading: 64
-    skim: 48
-digest:
-  daily_top_k: 12
-  weekly_top_k_per_track: 8
-  tracks:
-  - ml_theory
-  - optimization_and_generalization
-  - llm_foundations
-  - data_and_curation
-  - representation_learning
-  - alignment_and_posttraining
-  - mechanistic_interpretability
-  - multimodal_foundation_models
-  track_definitions:
-    optimization_and_generalization:
-      label: Optimization & Generalization
-      keywords:
-      - optimization
-      - generalization
-      - convergence
-      - sample complexity
-      - implicit bias
-      - training dynamics
-      - scaling law
-    data_and_curation:
-      label: Data & Curation
-      keywords:
-      - data curation
-      - data filtering
-      - data selection
-      - data quality
-      - dataset
-      - synthetic data
-      - deduplication
-      - contamination
-      - tokenization
-    mechanistic_interpretability:
-      label: Mechanistic Interpretability
-      keywords:
-      - mechanistic interpretability
-      - circuits
-      - superposition
-      - feature geometry
-      - probing
-    multimodal_foundation_models:
-      label: Multimodal Foundation Models
-      keywords:
-      - multimodal
-      - vision-language model
-      - vision language model
-      - foundation model
-      - image-text
-      - video-language
+kind: openalex_affiliation_catalog
+catalog_name: Major Research Labs
+entities:
+  google_deepmind:
+    label: Google DeepMind
+    aliases:
+      - DeepMind
+      - Google Research
+      - Google AI
+  openai:
+    label: OpenAI
+    aliases:
+      - OpenAI Research
+  anthropic:
+    label: Anthropic
+    aliases:
+      - Anthropic PBC
+  meta_fair:
+    label: Meta FAIR
+    aliases:
+      - Meta AI
+      - Meta Research
+      - FAIR
+      - Fundamental AI Research
+  microsoft_research:
+    label: Microsoft Research
+    aliases:
+      - MSR
+      - Microsoft AI
+  ai2:
+    label: Allen Institute for AI
+    aliases:
+      - Ai2
+  mila:
+    label: Mila
+    aliases:
+      - Mila - Quebec AI Institute
+      - Quebec AI Institute
+  vector_institute:
+    label: Vector Institute
+    aliases:
+      - Vector Institute for Artificial Intelligence
+  nvidia_research:
+    label: NVIDIA Research
+    aliases:
+      - NVIDIA
