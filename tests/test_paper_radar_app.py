@@ -6,7 +6,12 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from paper_radar_app import discover_config_yaml_paths, initialize_session, reset_session_state_for_config
+from paper_radar_app import (
+    discover_config_yaml_paths,
+    initialize_session,
+    reset_session_state_for_config,
+    run_openalex_self_check_from_session,
+)
 
 
 class PaperRadarAppHelperTests(unittest.TestCase):
@@ -52,6 +57,7 @@ class PaperRadarAppHelperTests(unittest.TestCase):
             "compare_config_b": "b",
             "compare_run_a": "#1",
             "compare_run_b": "#2",
+            "openalex_self_check_result": {"http_ok": True},
             "preset_name": "legacy",
             "weight_relevance": 0.25,
         }
@@ -68,6 +74,7 @@ class PaperRadarAppHelperTests(unittest.TestCase):
         self.assertEqual(state["last_source_status"], {})
         self.assertEqual(state["selected_paper_label"], "")
         self.assertIsNone(state["last_comparison"])
+        self.assertIsNone(state["openalex_self_check_result"])
         self.assertEqual(state["preset_name"], "")
         self.assertEqual(state["weight_relevance"], 0.25)
 
@@ -93,6 +100,31 @@ class PaperRadarAppHelperTests(unittest.TestCase):
 
             self.assertEqual(state["config_source_path"], str(selected.resolve()))
             apply_config.assert_not_called()
+
+    def test_run_openalex_self_check_from_session_uses_current_config_env_and_enabled(self) -> None:
+        state = {
+            "config_template": {"sources": {"openalex": {"api_key_env": "CUSTOM_OPENALEX_ENV"}}},
+            "queries_text": "test query",
+            "categories": ["cs.LG"],
+            "days_back": 7,
+            "max_results_per_query": 10,
+            "enable_semanticscholar": False,
+            "enable_openreview": False,
+            "openreview_venues_text": "",
+            "openreview_keywords_text": "",
+            "enable_openalex": True,
+        }
+        dummy_streamlit = SimpleNamespace(session_state=state)
+
+        with patch("paper_radar_app.st", dummy_streamlit), patch(
+            "paper_radar_app.openalex_self_check",
+            return_value={"env_present": True, "http_ok": True, "message": "ok"},
+        ) as self_check:
+            result = run_openalex_self_check_from_session(env={"CUSTOM_OPENALEX_ENV": "secret"})
+
+        self.assertTrue(result["enabled"])
+        self.assertEqual(result["api_key_env"], "CUSTOM_OPENALEX_ENV")
+        self_check.assert_called_once_with("CUSTOM_OPENALEX_ENV", env={"CUSTOM_OPENALEX_ENV": "secret"})
 
 
 if __name__ == "__main__":

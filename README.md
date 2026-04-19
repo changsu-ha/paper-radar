@@ -229,6 +229,7 @@ python paper_radar_starter.py fundamental_ml.yaml
   OpenReview venue 기반으로 논문을 추가 수집합니다.
 - `OpenAlex enrich`
   새 논문을 가져오는 기능이 아니라, 이미 수집한 논문에 citation / topic / OA 정보를 붙입니다.
+  sidebar의 `OpenAlex self-check` 버튼으로 현재 키와 연결 상태를 바로 확인할 수 있습니다.
 
 ### Ranking 설정
 
@@ -297,6 +298,8 @@ bucket 의미:
 - `OPENALEX_API_KEY`
 - `PAPER_RADAR_CONFIG`
 
+WSL에서는 `OPENALEX_API_KEY`를 `~/.profile`에 두는 것을 권장합니다. `~/.bashrc`에만 두면 login shell이 아닌 경로에서 보이지 않을 수 있습니다.
+
 예시:
 
 ```powershell
@@ -307,6 +310,11 @@ python -m streamlit run paper_radar_app.py
 ```bash
 export SEMANTIC_SCHOLAR_API_KEY="your_semantic_scholar_key"
 python -m streamlit run paper_radar_app.py --server.address 0.0.0.0 --server.port 8501
+```
+
+```bash
+echo 'export OPENALEX_API_KEY="your_openalex_key"' >> ~/.profile
+source ~/.profile
 ```
 
 ## 테스트

@@ -1,0 +1,394 @@
+project:
+  name: paper-radar-outstanding-scholars-citation-led
+  language: ko
+  timezone: Asia/Seoul
+curation:
+  generated_at: '2026-04-18'
+  selection_policy:
+  - 주요 학자 선정은 Google Scholar citation snapshot을 1차 기준으로 하고, foundational ML / LLM / data relevance와 최근 arXiv 활동성을 2차 기준으로 반영했다.
+  - citation 숫자는 snapshot이며 시간이 지나면 변한다.
+  - author alias는 arXiv 검색 recall을 높이기 위해 일부 ASCII / punctuation 변형을 포함한다.
+  scholars:
+  - name: Yoshua Bengio
+    citations_total: 1081464
+    citation_source: Google Scholar search snippet
+    citation_snapshot_date: '2026-04-18'
+    current_affiliation: Université de Montréal / Mila / IVADO / CIFAR
+    search_aliases:
+    - au:"Yoshua Bengio"
+    focus:
+    - deep learning
+    - generative modeling
+    - representation learning
+  - name: Geoffrey Hinton
+    citations_total: 1027959
+    citation_source: Google Scholar search snippet
+    citation_snapshot_date: '2026-04-18'
+    current_affiliation: University of Toronto
+    search_aliases:
+    - au:"Geoffrey Hinton"
+    focus:
+    - deep learning
+    - representation learning
+    - foundations
+  - name: Yann LeCun
+    citations_total: 464386
+    citation_source: Google Scholar search snippet
+    citation_snapshot_date: '2026-04-18'
+    current_affiliation: Meta / New York University
+    search_aliases:
+    - au:"Yann LeCun"
+    focus:
+    - deep learning
+    - representation learning
+    - world models
+  - name: Michael I. Jordan
+    citations_total: 359811
+    citation_source: Google Scholar search snippet
+    citation_snapshot_date: '2026-04-18'
+    current_affiliation: UC Berkeley
+    search_aliases:
+    - au:"Michael I Jordan"
+    - au:"Michael I. Jordan"
+    focus:
+    - statistical machine learning
+    - probabilistic modeling
+    - optimization
+  - name: Aaron Courville
+    citations_total: 347935
+    citation_source: Google Scholar search snippet
+    citation_snapshot_date: '2026-04-18'
+    current_affiliation: Université de Montréal / Mila
+    search_aliases:
+    - au:"Aaron Courville"
+    focus:
+    - deep learning
+    - representation learning
+    - generative models
+  - name: Fei-Fei Li
+    citations_total: 343978
+    citation_source: Google Scholar search snippet
+    citation_snapshot_date: '2026-04-18'
+    current_affiliation: Stanford University
+    search_aliases:
+    - au:"Fei-Fei Li"
+    focus:
+    - foundation data
+    - vision-language
+    - representation learning
+  - name: Juergen Schmidhuber
+    citations_total: 318417
+    citation_source: Google Scholar search snippet
+    citation_snapshot_date: '2026-04-18'
+    current_affiliation: KAUST / IDSIA / University of Lugano
+    search_aliases:
+    - au:"Juergen Schmidhuber"
+    - au:"Jürgen Schmidhuber"
+    focus:
+    - sequence modeling
+    - recurrent networks
+    - foundations
+  - name: Christopher D. Manning
+    citations_total: 318041
+    citation_source: Google Scholar search snippet
+    citation_snapshot_date: '2026-04-18'
+    current_affiliation: Stanford University
+    search_aliases:
+    - au:"Christopher D Manning"
+    - au:"Christopher Manning"
+    focus:
+    - NLP
+    - language models
+    - representation learning
+  - name: Andrew Ng
+    citations_total: 311783
+    citation_source: Google Scholar search snippet
+    citation_snapshot_date: '2026-04-18'
+    current_affiliation: Stanford University
+    search_aliases:
+    - au:"Andrew Y Ng"
+    - au:"Andrew Ng"
+    focus:
+    - machine learning
+    - deep learning
+    - foundation models
+  - name: Bernhard Schölkopf
+    citations_total: 279925
+    citation_source: Google Scholar search snippet
+    citation_snapshot_date: '2026-04-18'
+    current_affiliation: Max Planck Institute for Intelligent Systems / ETH Zurich
+    search_aliases:
+    - au:"Bernhard Schoelkopf"
+    - au:"Bernhard Scholkopf"
+    - au:"Bernhard Schölkopf"
+    focus:
+    - kernel methods
+    - causal ML
+    - probabilistic learning
+  - name: Christopher M. Bishop
+    citations_total: 168680
+    citation_source: Google Scholar search snippet
+    citation_snapshot_date: '2026-04-18'
+    current_affiliation: Microsoft Research AI for Science
+    search_aliases:
+    - au:"Christopher M Bishop"
+    - au:"Christopher Bishop"
+    focus:
+    - probabilistic ML
+    - generative modeling
+    - foundations
+  - name: Percy Liang
+    citations_total: 138781
+    citation_source: Google Scholar search snippet
+    citation_snapshot_date: '2026-04-18'
+    current_affiliation: Stanford University
+    search_aliases:
+    - au:"Percy Liang"
+    focus:
+    - LLMs
+    - data curation
+    - evaluation
+    - alignment
+  - name: Zoubin Ghahramani
+    citations_total: 122341
+    citation_source: Google Scholar search snippet
+    citation_snapshot_date: '2026-04-18'
+    current_affiliation: University of Cambridge / Google DeepMind
+    search_aliases:
+    - au:"Zoubin Ghahramani"
+    focus:
+    - Bayesian ML
+    - probabilistic modeling
+    - foundation models
+  - name: Dan Jurafsky
+    citations_total: 108624
+    citation_source: Google Scholar search snippet
+    citation_snapshot_date: '2026-04-18'
+    current_affiliation: Stanford University
+    search_aliases:
+    - au:"Dan Jurafsky"
+    - au:"Daniel Jurafsky"
+    focus:
+    - NLP
+    - language modeling
+    - evaluation
+  - name: Peter Bartlett
+    citations_total: 64727
+    citation_source: Google Scholar search snippet
+    citation_snapshot_date: '2026-04-18'
+    current_affiliation: UC Berkeley
+    search_aliases:
+    - au:"Peter L Bartlett"
+    - au:"Peter Bartlett"
+    focus:
+    - statistical learning theory
+    - generalization
+    - optimization
+  - name: Sanjeev Arora
+    citations_total: 46747
+    citation_source: Google Scholar search snippet
+    citation_snapshot_date: '2026-04-18'
+    current_affiliation: Princeton University
+    search_aliases:
+    - au:"Sanjeev Arora"
+    focus:
+    - theoretical ML
+    - optimization
+    - LLM theory
+  - name: Shai Shalev-Shwartz
+    citations_total: 43493
+    citation_source: Google Scholar search snippet
+    citation_snapshot_date: '2026-04-18'
+    current_affiliation: The Hebrew University
+    search_aliases:
+    - au:"Shai Shalev-Shwartz"
+    focus:
+    - learning theory
+    - online learning
+    - optimization
+  - name: Tengyu Ma
+    citations_total: 37198
+    citation_source: Google Scholar search snippet
+    citation_snapshot_date: '2026-04-18'
+    current_affiliation: Stanford University
+    search_aliases:
+    - au:"Tengyu Ma"
+    focus:
+    - deep learning theory
+    - pretraining
+    - reasoning
+  - name: Sébastien Bubeck
+    citations_total: 36496
+    citation_source: Google Scholar search snippet
+    citation_snapshot_date: '2026-04-18'
+    current_affiliation: OpenAI
+    search_aliases:
+    - au:"Sebastien Bubeck"
+    - au:"Sébastien Bubeck"
+    focus:
+    - theoretical ML
+    - optimization
+    - reasoning models
+sources:
+  arxiv:
+    enabled: true
+    categories:
+    - cs.LG
+    - stat.ML
+    - cs.CL
+    - cs.AI
+    - cs.CV
+    - cs.IR
+    - math.OC
+    - math.ST
+    queries:
+    - (au:"Yoshua Bengio" OR au:"Geoffrey Hinton" OR au:"Yann LeCun" OR au:"Michael I Jordan" OR au:"Michael I. Jordan")
+    - (au:"Aaron Courville" OR au:"Andrew Y Ng" OR au:"Andrew Ng" OR au:"Fei-Fei Li" OR au:"Juergen Schmidhuber" OR au:"Jürgen Schmidhuber")
+    - (au:"Christopher D Manning" OR au:"Christopher Manning" OR au:"Dan Jurafsky" OR au:"Daniel Jurafsky" OR au:"Percy Liang" OR au:"Zoubin Ghahramani")
+    - (au:"Bernhard Schoelkopf" OR au:"Bernhard Scholkopf" OR au:"Bernhard Schölkopf" OR au:"Christopher M Bishop" OR au:"Christopher Bishop" OR au:"Peter L Bartlett" OR au:"Peter Bartlett")
+    - (au:"Sanjeev Arora" OR au:"Shai Shalev-Shwartz" OR au:"Tengyu Ma" OR au:"Sebastien Bubeck" OR au:"Sébastien Bubeck")
+    days_back_daily: 21
+    days_back_weekly: 90
+    max_results_per_query: 14
+  openreview:
+    enabled: false
+    venues: []
+    keywords: []
+  semanticscholar:
+    enabled: true
+    api_key_env: SEMANTIC_SCHOLAR_API_KEY
+  openalex:
+    enabled: true
+    api_key_env: OPENALEX_API_KEY
+filters:
+  include_keywords:
+  - machine learning
+  - deep learning
+  - foundation model
+  - large language model
+  - llm
+  - language model
+  - pretraining
+  - post-training
+  - alignment
+  - reward model
+  - preference optimization
+  - RLHF
+  - DPO
+  - reasoning
+  - chain-of-thought
+  - in-context learning
+  - scaling law
+  - training dynamics
+  - optimization
+  - generalization
+  - convergence
+  - sample complexity
+  - implicit bias
+  - representation learning
+  - self-supervised
+  - contrastive
+  - masked modeling
+  - mechanistic interpretability
+  - probing
+  - circuits
+  - data curation
+  - data filtering
+  - data selection
+  - data mixture
+  - synthetic data
+  - deduplication
+  - data quality
+  - contamination
+  - tokenization
+  - benchmark
+  - evaluation
+  - probabilistic
+  - bayesian
+  - causal
+  - distribution shift
+  - robustness
+  - multimodal
+  - vision-language model
+  - distillation
+  exclude_keywords:
+  - robot
+  - robotics
+  - humanoid
+  - manipulation
+  - teleoperation
+  - autonomous driving
+  - medical imaging
+  - clinical
+  - protein
+  - molecule
+  - drug discovery
+  - genomics
+  - survey
+  - editorial
+  - position paper
+ranking:
+  weights:
+    relevance: 0.38
+    novelty: 0.18
+    empirical: 0.07
+    source_signal: 0.08
+    momentum: 0.12
+    recency: 0.17
+    actionability: 0.0
+  buckets:
+    must_read: 80
+    worth_reading: 64
+    skim: 48
+digest:
+  daily_top_k: 12
+  weekly_top_k_per_track: 8
+  tracks:
+  - ml_theory
+  - optimization_and_generalization
+  - llm_foundations
+  - data_and_curation
+  - representation_learning
+  - alignment_and_posttraining
+  - mechanistic_interpretability
+  - multimodal_foundation_models
+  track_definitions:
+    optimization_and_generalization:
+      label: Optimization & Generalization
+      keywords:
+      - optimization
+      - generalization
+      - convergence
+      - sample complexity
+      - implicit bias
+      - training dynamics
+      - scaling law
+    data_and_curation:
+      label: Data & Curation
+      keywords:
+      - data curation
+      - data filtering
+      - data selection
+      - data quality
+      - dataset
+      - synthetic data
+      - deduplication
+      - contamination
+      - tokenization
+    mechanistic_interpretability:
+      label: Mechanistic Interpretability
+      keywords:
+      - mechanistic interpretability
+      - circuits
+      - superposition
+      - feature geometry
+      - probing
+    multimodal_foundation_models:
+      label: Multimodal Foundation Models
+      keywords:
+      - multimodal
+      - vision-language model
+      - vision language model
+      - foundation model
+      - image-text
+      - video-language

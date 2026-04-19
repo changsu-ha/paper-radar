@@ -55,6 +55,7 @@ from paper_radar_core import (
     get_config_path,
     load_config,
     normalize_weight_map,
+    openalex_self_check,
     paper_from_dict,
     papers_to_records,
     parse_keywords_input,
@@ -89,6 +90,7 @@ RESET_SESSION_KEYS = (
     "compare_config_b",
     "compare_run_a",
     "compare_run_b",
+    "openalex_self_check_result",
 )
 
 FIELD_HELP = {
@@ -310,6 +312,7 @@ def reset_session_state_for_config(state: MutableMapping[str, Any]) -> None:
     state["last_source_status"] = {}
     state["selected_paper_label"] = ""
     state["last_comparison"] = None
+    state["openalex_self_check_result"] = None
     state["preset_name"] = ""
 
 
@@ -406,6 +409,9 @@ def render_sidebar(discovered_configs: Mapping[str, Path], current_label: str) -
         help=FIELD_HELP["openreview_keywords_text"],
     )
     st.toggle("OpenAlex enrich", key="enable_openalex", help=FIELD_HELP["enable_openalex"])
+    if st.button("OpenAlex self-check", use_container_width=True):
+        st.session_state["openalex_self_check_result"] = run_openalex_self_check_from_session()
+    render_openalex_self_check_result(st.session_state.get("openalex_self_check_result"))
 
     st.divider()
     st.header("Ranking 설정")
@@ -527,6 +533,55 @@ def build_rank_options_from_session() -> RankOptions:
         weights=weights,
         buckets=buckets,
         daily_top_k=int(st.session_state["daily_top_k"]),
+    )
+
+
+def run_openalex_self_check_from_session(env: Mapping[str, str] | None = None) -> dict[str, Any]:
+    fetch_options = build_fetch_options_from_session()
+    result = openalex_self_check(fetch_options.openalex_api_key_env, env=env)
+    result["enabled"] = bool(fetch_options.enable_openalex)
+    result["api_key_env"] = fetch_options.openalex_api_key_env
+    return result
+
+
+def render_openalex_self_check_result(result: Mapping[str, Any] | None) -> None:
+    if not result:
+        return
+
+    enabled = bool(result.get("enabled"))
+    env_present = bool(result.get("env_present"))
+    http_ok = bool(result.get("http_ok"))
+    if http_ok:
+        st.success("OpenAlex self-check passed.")
+    elif env_present:
+        st.error(str(result.get("message") or "OpenAlex self-check failed."))
+    else:
+        st.warning(str(result.get("message") or "OpenAlex API key is missing."))
+
+    if not enabled:
+        st.info("현재 GUI 세션에서 `OpenAlex enrich`가 꺼져 있습니다. YAML을 다시 불러왔는지 확인하세요.")
+
+    st.caption(
+        " / ".join(
+            [
+                f"enabled={enabled}",
+                f"env={result.get('api_key_env')}",
+                f"source={result.get('env_source') or '-'}",
+                f"masked={result.get('api_key_masked') or '-'}",
+            ]
+        )
+    )
+    st.json(
+        {
+            "openalex_enabled": enabled,
+            "env_present": env_present,
+            "http_ok": http_ok,
+            "env_source": result.get("env_source"),
+            "status_code": result.get("status_code"),
+            "daily_remaining_usd": result.get("daily_remaining_usd"),
+            "resets_at": result.get("resets_at"),
+            "message": result.get("message"),
+        }
     )
 
 

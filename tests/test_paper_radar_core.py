@@ -34,6 +34,7 @@ from paper_radar_core import (
     get_config_path,
     load_config,
     normalize_weight_map,
+    openalex_self_check,
     paper_from_dict,
     parse_keywords_input,
     rank_papers,
@@ -280,6 +281,52 @@ class PaperRadarCoreTests(unittest.TestCase):
         self.assertEqual(enriched[0].doi, "10.1000/openalex")
         self.assertIn("World Models", enriched[0].topics)
 
+    def test_openalex_self_check_reports_missing_env(self) -> None:
+        result = openalex_self_check(env={})
+
+        self.assertFalse(result["env_present"])
+        self.assertFalse(result["http_ok"])
+        self.assertIn("is not set", result["message"])
+
+    def test_openalex_self_check_reads_profile_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            profile = Path(tmpdir) / ".profile"
+            profile.write_text('export OPENALEX_API_KEY="profile-secret"\n', encoding="utf-8")
+
+            response = Mock(status_code=200)
+            response.raise_for_status = Mock()
+            response.json = Mock(return_value={"rate_limit": {"daily_remaining_usd": 1}})
+
+            with patch("paper_radar_core.requests.get", return_value=response) as mock_get:
+                result = openalex_self_check(env={}, search_paths=[profile])
+
+        self.assertTrue(result["env_present"])
+        self.assertTrue(result["http_ok"])
+        self.assertEqual(result["env_source"], str(profile))
+        self.assertEqual(mock_get.call_args.kwargs["params"]["api_key"], "profile-secret")
+
+    def test_openalex_self_check_parses_rate_limit_response(self) -> None:
+        response = Mock(status_code=200)
+        response.raise_for_status = Mock()
+        response.json = Mock(
+            return_value={
+                "api_key": "abc...xyz",
+                "rate_limit": {
+                    "daily_remaining_usd": 0.95,
+                    "resets_at": "2026-04-20T00:00:00.000Z",
+                },
+            }
+        )
+
+        with patch("paper_radar_core.requests.get", return_value=response) as mock_get:
+            result = openalex_self_check(env={"OPENALEX_API_KEY": "secret-key"})
+
+        self.assertTrue(result["http_ok"])
+        self.assertEqual(result["env_source"], "process")
+        self.assertEqual(result["daily_remaining_usd"], 0.95)
+        self.assertEqual(result["resets_at"], "2026-04-20T00:00:00.000Z")
+        self.assertEqual(mock_get.call_args.kwargs["params"]["api_key"], "secret-key")
+
     def test_build_digest_options_accepts_list_style_track_definitions(self) -> None:
         config = {
             "digest": {
@@ -300,6 +347,27 @@ class PaperRadarCoreTests(unittest.TestCase):
             digest_options.track_definitions["data_selection"]["keywords"],
             ["data curation", "data filtering", "data selection"],
         )
+
+    def test_openalex_query_uses_api_key_query_param(self) -> None:
+        response = Mock(status_code=200)
+        response.raise_for_status = Mock()
+        response.json = Mock(return_value={"results": []})
+
+        paper = make_paper("Robot World Models", "Planning with latent models.", external_id="2604.00001v1")
+        fetch_options = FetchOptions(
+            queries=["robot"],
+            categories=["cs.RO"],
+            days_back=7,
+            max_results_per_query=5,
+            enable_semanticscholar=False,
+            enable_openalex=True,
+        )
+
+        with patch("paper_radar_core.requests.get", return_value=response) as mock_get:
+            with patch("paper_radar_core.time.sleep", return_value=None):
+                enrich_openalex([paper], fetch_options, env={"OPENALEX_API_KEY": "secret-key"}, sleep_s=0.0)
+
+        self.assertEqual(mock_get.call_args.kwargs["params"]["api_key"], "secret-key")
 
     def test_assign_tracks_and_digest_support_multilabel(self) -> None:
         paper = make_paper(

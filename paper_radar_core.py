@@ -8,6 +8,7 @@ import json
 import math
 import os
 import re
+import shlex
 import sqlite3
 import sys
 import time
@@ -27,6 +28,7 @@ except ModuleNotFoundError:
 ARXIV_API = "https://export.arxiv.org/api/query"
 OPENREVIEW_API = "https://api2.openreview.net/notes"
 OPENALEX_WORKS_API = "https://api.openalex.org/works"
+OPENALEX_RATE_LIMIT_API = "https://api.openalex.org/rate-limit"
 SEMANTIC_SCHOLAR_API = "https://api.semanticscholar.org/graph/v1/paper/search/bulk"
 
 DEFAULT_CONFIG_DIR = Path("configs")
@@ -1244,20 +1246,132 @@ class OpenAlexClient:
         return queries
 
     def _query(self, params: Mapping[str, Any]) -> dict[str, Any]:
-        headers = {"User-Agent": "paper-radar-harness/0.2 (+research scout)"}
-        if self.api_key:
-            headers["api-key"] = self.api_key
         query_params = dict(params)
         query_params.setdefault("per-page", 5)
         query_params.setdefault("sort", "cited_by_count:desc")
         try:
-            response = requests.get(OPENALEX_WORKS_API, params=query_params, headers=headers, timeout=30)
+            response = _openalex_get(OPENALEX_WORKS_API, params=query_params, api_key=self.api_key, timeout=30)
             response.raise_for_status()
             data = response.json()
         except (requests.RequestException, ValueError, OSError) as exc:
             _warn(f"[warn] OpenAlex lookup failed for {params!r}: {exc}")
             return {}
         return data
+
+
+def openalex_self_check(
+    api_key_env: str = "OPENALEX_API_KEY",
+    env: Mapping[str, str] | None = None,
+    timeout_s: float = 15.0,
+    search_paths: Sequence[Path] | None = None,
+) -> dict[str, Any]:
+    api_key, env_source = _resolve_api_key(api_key_env, env=env, search_paths=search_paths)
+    result: dict[str, Any] = {
+        "api_key_env": api_key_env,
+        "env_present": bool(api_key),
+        "env_source": env_source,
+        "api_key_masked": _mask_api_key(api_key),
+        "api_key_length": len(api_key or ""),
+        "http_ok": False,
+        "status_code": None,
+        "daily_remaining_usd": None,
+        "resets_at": None,
+        "message": "",
+    }
+    if not api_key:
+        result["message"] = f"{api_key_env} is not set."
+        return result
+
+    try:
+        response = _openalex_get(OPENALEX_RATE_LIMIT_API, api_key=api_key, timeout=timeout_s)
+        result["status_code"] = response.status_code
+        response.raise_for_status()
+        payload = response.json()
+    except (requests.RequestException, ValueError, OSError) as exc:
+        result["message"] = f"OpenAlex self-check failed: {exc}"
+        return result
+
+    rate_limit = payload.get("rate_limit") or {}
+    result.update(
+        {
+            "http_ok": True,
+            "daily_remaining_usd": rate_limit.get("daily_remaining_usd"),
+            "resets_at": rate_limit.get("resets_at"),
+            "message": "OpenAlex API key verified.",
+        }
+    )
+    return result
+
+
+def _openalex_get(
+    url: str,
+    *,
+    params: Mapping[str, Any] | None = None,
+    api_key: str | None = None,
+    timeout: float = 30,
+) -> requests.Response:
+    query_params = dict(params or {})
+    if api_key:
+        query_params["api_key"] = api_key
+    headers = {"User-Agent": "paper-radar-harness/0.2 (+research scout)"}
+    return requests.get(url, params=query_params, headers=headers, timeout=timeout)
+
+
+def _resolve_api_key(
+    env_name: str,
+    *,
+    env: Mapping[str, str] | None = None,
+    search_paths: Sequence[Path] | None = None,
+) -> tuple[str | None, str | None]:
+    env_map = os.environ if env is None else env
+    direct_value = env_map.get(env_name)
+    if direct_value:
+        return direct_value, "process"
+
+    candidate_paths = tuple(search_paths) if search_paths is not None else None
+    if candidate_paths is None and env is not None:
+        return None, None
+    if candidate_paths is None:
+        home = Path.home()
+        candidate_paths = (
+            home / ".profile",
+            home / ".bash_profile",
+            home / ".bashrc",
+        )
+
+    for path in candidate_paths:
+        file_value = _read_exported_env_value(path, env_name)
+        if file_value:
+            return file_value, str(path)
+    return None, None
+
+
+def _read_exported_env_value(path: Path, env_name: str) -> str | None:
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+
+    pattern = re.compile(rf"^\s*export\s+{re.escape(env_name)}=(.+?)\s*$")
+    for line in lines:
+        match = pattern.match(line)
+        if not match:
+            continue
+        try:
+            tokens = shlex.split(match.group(1), comments=True, posix=True)
+        except ValueError:
+            continue
+        if tokens:
+            return tokens[0]
+    return None
+
+
+def _mask_api_key(value: str | None) -> str | None:
+    if not value:
+        return None
+    if len(value) <= 6:
+        return "*" * len(value)
+    return f"{value[:3]}...{value[-3:]}"
 
 
 class RuleRanker:
@@ -1709,8 +1823,7 @@ def enrich_openalex(
     if not fetch_options.enable_openalex:
         return cloned, {"enabled": False}
 
-    env_map = os.environ if env is None else env
-    api_key = env_map.get(fetch_options.openalex_api_key_env)
+    api_key, env_source = _resolve_api_key(fetch_options.openalex_api_key_env, env=env)
     client = OpenAlexClient(api_key=api_key)
     enriched: list[Paper] = []
     success_count = 0
@@ -1722,7 +1835,7 @@ def enrich_openalex(
             success_count += 1
         enriched.append(paper)
         time.sleep(sleep_s)
-    return enriched, {"enabled": True, "enriched": success_count}
+    return enriched, {"enabled": True, "enriched": success_count, "env_source": env_source}
 
 
 def enrich_papers_with_status(
