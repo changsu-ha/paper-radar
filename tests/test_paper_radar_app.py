@@ -16,7 +16,7 @@ from paper_radar_app import (
 
 
 class PaperRadarAppHelperTests(unittest.TestCase):
-    def test_discover_config_yaml_paths_includes_configs_and_excludes_prompts(self) -> None:
+    def test_discover_config_yaml_paths_includes_configs_and_excludes_catalogs(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             config_dir = root / "configs"
@@ -27,13 +27,11 @@ class PaperRadarAppHelperTests(unittest.TestCase):
             base_config = config_dir / "robotics.yaml"
             alt_config = config_dir / "fundamental_ml.yaml"
             catalog = config_dir / "major_universities.yaml"
-            prompts = config_dir / "paper_radar_prompts.example.yaml"
             other_yaml = root / "notes.yaml"
             preset = preset_dir / "robot.yaml"
 
             base_config.write_text("project:\n  name: demo\n", encoding="utf-8")
             alt_config.write_text("project:\n  name: demo\n", encoding="utf-8")
-            prompts.write_text("project:\n  name: demo\n", encoding="utf-8")
             other_yaml.write_text("project:\n  name: demo\n", encoding="utf-8")
             preset.write_text("project:\n  name: demo\n", encoding="utf-8")
             catalog.write_text(
@@ -48,7 +46,6 @@ class PaperRadarAppHelperTests(unittest.TestCase):
             self.assertIn(alt_config.resolve(), discovered_paths)
             self.assertIn(preset.resolve(), discovered_paths)
             self.assertNotIn(catalog.resolve(), discovered_paths)
-            self.assertNotIn(prompts.resolve(), discovered_paths)
             self.assertNotIn(other_yaml.resolve(), discovered_paths)
 
     def test_discover_priority_catalog_paths_includes_only_catalogs(self) -> None:

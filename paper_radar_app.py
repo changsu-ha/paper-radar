@@ -223,8 +223,6 @@ def discover_config_yaml_paths(
     if config_root.exists():
         for pattern in ("*.yaml", "*.yml"):
             for path in sorted(config_root.glob(pattern)):
-                if path.name == "paper_radar_prompts.example.yaml":
-                    continue
                 if is_catalog_yaml_path(path):
                     continue
                 paths.append(path.resolve())
@@ -237,8 +235,6 @@ def discover_config_yaml_paths(
     for extra_path in extra_paths:
         candidate = Path(extra_path).expanduser().resolve()
         if candidate.suffix.lower() != ".yaml":
-            continue
-        if candidate.name == "paper_radar_prompts.example.yaml":
             continue
         if is_catalog_yaml_path(candidate):
             continue

@@ -44,3 +44,58 @@ entities:
     label: NVIDIA Research
     aliases:
       - NVIDIA
+  microsoft_research_asia:
+    label: Microsoft Research Asia
+    aliases:
+      - MSRA
+  beijing_academy_of_artificial_intelligence:
+    label: Beijing Academy of Artificial Intelligence
+    aliases:
+      - BAAI
+  zhongguancun_academy:
+    label: Zhongguancun Academy
+    aliases:
+      - Zhongguancun Institute of Artificial Intelligence
+  shanghai_ai_laboratory:
+    label: Shanghai AI Laboratory
+    aliases:
+      - Shanghai AI Lab
+      - Shanghai Artificial Intelligence Laboratory
+  chinese_academy_of_sciences_automation:
+    label: Institute of Automation, Chinese Academy of Sciences
+    aliases:
+      - CASIA
+      - Chinese Academy of Sciences
+  huawei_noahs_ark_lab:
+    label: Huawei Noah's Ark Lab
+    aliases:
+      - Huawei Noah
+      - Noah's Ark Laboratory
+  alibaba_damo_qwen:
+    label: Alibaba DAMO Academy
+    aliases:
+      - DAMO Academy
+      - Alibaba Group
+      - Alibaba
+  bytedance_seed:
+    label: ByteDance Seed
+    aliases:
+      - ByteDance
+  deepseek_ai:
+    label: DeepSeek AI
+    aliases:
+      - DeepSeek
+  tencent_ai_lab_hunyuan:
+    label: Tencent AI Lab
+    aliases:
+      - Tencent Hunyuan
+      - Tencent
+  baidu_research_ernie:
+    label: Baidu Research
+    aliases:
+      - Baidu
+  zhipu_ai_glm:
+    label: Zhipu AI
+    aliases:
+      - Zhipu
+      - Zhipu.AI

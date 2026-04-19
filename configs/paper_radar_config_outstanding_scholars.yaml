@@ -1,13 +1,14 @@
 project:
-  name: paper-radar-outstanding-scholars-citation-led
+  name: paper-radar-outstanding-scholars-global-plus-china
   language: ko
   timezone: Asia/Seoul
 curation:
-  generated_at: '2026-04-18'
+  generated_at: '2026-04-19'
   selection_policy:
   - 주요 학자 선정은 Google Scholar citation snapshot을 1차 기준으로 하고, foundational ML / LLM / data relevance와 최근 arXiv 활동성을 2차 기준으로 반영했다.
+  - 중국 및 중국계 high-impact scholar coverage를 추가해 기존 citation-led preset과 China-enhanced preset을 하나로 통합했다.
   - citation 숫자는 snapshot이며 시간이 지나면 변한다.
-  - author alias는 arXiv 검색 recall을 높이기 위해 일부 ASCII / punctuation 변형을 포함한다.
+  - author alias는 arXiv 검색 recall을 높이기 위해 ASCII / punctuation 변형을 포함하며, 동명이인 noise는 OpenAlex/Semantic Scholar enrich로 후처리하는 것이 좋다.
   scholars:
   - name: Yoshua Bengio
     citations_total: 1081464
@@ -31,6 +32,29 @@ curation:
     - deep learning
     - representation learning
     - foundations
+  - name: Kaiming He
+    citations_total: 813081
+    citation_source: Google Scholar search snippet
+    citation_snapshot_date: '2026-04-19'
+    current_affiliation: MIT; formerly Microsoft Research Asia / FAIR; Tsinghua alumnus
+    search_aliases:
+    - au:"Kaiming He"
+    focus:
+    - deep learning
+    - representation learning
+    - vision foundation models
+  - name: Jian Sun
+    citations_total: 740818
+    citation_source: Google Scholar search snippet
+    citation_snapshot_date: '2026-04-19'
+    current_affiliation: Megvii Research / Microsoft Research Asia legacy
+    search_aliases:
+    - au:"Jian Sun"
+    focus:
+    - deep learning
+    - computer vision
+    - representation learning
+    active_search_note: historically influential; not expected to produce new papers
   - name: Yann LeCun
     citations_total: 464386
     citation_source: Google Scholar search snippet
@@ -137,6 +161,18 @@ curation:
     - probabilistic ML
     - generative modeling
     - foundations
+  - name: Qiang Yang
+    citations_total: 164710
+    citation_source: Google Scholar search snippet
+    citation_snapshot_date: '2026-04-19'
+    current_affiliation: HKUST / Hong Kong Polytechnic University / WeBank
+    search_aliases:
+    - au:"Qiang Yang"
+    focus:
+    - transfer learning
+    - federated learning
+    - data mining
+    - AI
   - name: Percy Liang
     citations_total: 138781
     citation_source: Google Scholar search snippet
@@ -160,6 +196,20 @@ curation:
     - Bayesian ML
     - probabilistic modeling
     - foundation models
+  - name: Zhi-Hua Zhou
+    citations_total: 115223
+    citation_source: Google Scholar search snippet
+    citation_snapshot_date: '2026-04-19'
+    current_affiliation: Nanjing University / LAMDA
+    search_aliases:
+    - au:"Zhi-Hua Zhou"
+    - au:"Zhihua Zhou"
+    - au:"Zhou Zhi-Hua"
+    focus:
+    - machine learning
+    - ensemble learning
+    - weakly supervised learning
+    - data mining
   - name: Dan Jurafsky
     citations_total: 108624
     citation_source: Google Scholar search snippet
@@ -172,6 +222,100 @@ curation:
     - NLP
     - language modeling
     - evaluation
+  - name: Tie-Yan Liu
+    citations_total: 98063
+    citation_source: Google Scholar search snippet
+    citation_snapshot_date: '2026-04-19'
+    current_affiliation: Zhongguancun Academy / formerly Microsoft Research Asia
+    search_aliases:
+    - au:"Tie-Yan Liu"
+    - au:"Tie Yan Liu"
+    - au:"Tieyan Liu"
+    focus:
+    - machine learning
+    - learning to rank
+    - AI for science
+    - LLMs
+  - name: Dahua Lin
+    citations_total: 91069
+    citation_source: Google Scholar search snippet
+    citation_snapshot_date: '2026-04-19'
+    current_affiliation: CUHK / Shanghai AI Lab ecosystem
+    search_aliases:
+    - au:"Dahua Lin"
+    focus:
+    - machine learning
+    - multimodal foundation models
+    - computer vision
+  - name: Zhiyuan Liu
+    citations_total: 84540
+    citation_source: Google Scholar search snippet
+    citation_snapshot_date: '2026-04-19'
+    current_affiliation: Tsinghua University / ModelBest / OpenBMB
+    search_aliases:
+    - au:"Zhiyuan Liu"
+    focus:
+    - NLP
+    - knowledge graphs
+    - foundation models
+    - OpenBMB
+  - name: Furu Wei
+    citations_total: 81586
+    citation_source: Google Scholar search snippet
+    citation_snapshot_date: '2026-04-19'
+    current_affiliation: Microsoft Research Asia
+    search_aliases:
+    - au:"Furu Wei"
+    focus:
+    - NLP
+    - large foundation models
+    - multimodal AI
+  - name: Maosong Sun
+    citations_total: 78343
+    citation_source: Google Scholar search snippet
+    citation_snapshot_date: '2026-04-19'
+    current_affiliation: Tsinghua University / THUNLP
+    search_aliases:
+    - au:"Maosong Sun"
+    focus:
+    - NLP
+    - AI
+    - Chinese language processing
+  - name: Tong Zhang
+    citations_total: 77836
+    citation_source: Google Scholar search snippet
+    citation_snapshot_date: '2026-04-19'
+    current_affiliation: UIUC; formerly HKUST / Tencent AI Lab
+    search_aliases:
+    - au:"Tong Zhang"
+    focus:
+    - machine learning theory
+    - optimization
+    - statistical learning
+  - name: Jie Tang
+    citations_total: 72860
+    citation_source: Google Scholar search snippet
+    citation_snapshot_date: '2026-04-19'
+    current_affiliation: Tsinghua University / WeBank Chair Professor
+    search_aliases:
+    - au:"Jie Tang"
+    - au:"Tang Jie"
+    focus:
+    - AGI
+    - data mining
+    - knowledge graphs
+    - machine learning
+  - name: Wanli Ouyang
+    citations_total: 71345
+    citation_source: Google Scholar search snippet
+    citation_snapshot_date: '2026-04-19'
+    current_affiliation: Shanghai AI Lab / CUHK
+    search_aliases:
+    - au:"Wanli Ouyang"
+    focus:
+    - computer vision
+    - multimodal learning
+    - foundation models
   - name: Peter Bartlett
     citations_total: 64727
     citation_source: Google Scholar search snippet
@@ -184,6 +328,29 @@ curation:
     - statistical learning theory
     - generalization
     - optimization
+  - name: Jun Zhu
+    citations_total: 63645
+    citation_source: Google Scholar search snippet
+    citation_snapshot_date: '2026-04-19'
+    current_affiliation: Tsinghua University
+    search_aliases:
+    - au:"Jun Zhu"
+    focus:
+    - probabilistic machine learning
+    - Bayesian methods
+    - deep generative models
+  - name: Ji-Rong Wen
+    citations_total: 63507
+    citation_source: Google Scholar search snippet
+    citation_snapshot_date: '2026-04-19'
+    current_affiliation: Renmin University of China / Gaoling School of AI
+    search_aliases:
+    - au:"Ji-Rong Wen"
+    - au:"Jirong Wen"
+    focus:
+    - information retrieval
+    - machine learning
+    - large language models
   - name: Sanjeev Arora
     citations_total: 46747
     citation_source: Google Scholar search snippet
@@ -206,6 +373,18 @@ curation:
     - learning theory
     - online learning
     - optimization
+  - name: Hang Li
+    citations_total: 38039
+    citation_source: Google Scholar search snippet
+    citation_snapshot_date: '2026-04-19'
+    current_affiliation: ByteDance Seed; formerly Huawei Noah's Ark Lab
+    search_aliases:
+    - au:"Hang Li"
+    focus:
+    - NLP
+    - information retrieval
+    - machine learning
+    - data mining
   - name: Tengyu Ma
     citations_total: 37198
     citation_source: Google Scholar search snippet
@@ -229,6 +408,62 @@ curation:
     - theoretical ML
     - optimization
     - reasoning models
+  - name: Ting Liu
+    citations_total: 36273
+    citation_source: Google Scholar search snippet
+    citation_snapshot_date: '2026-04-19'
+    current_affiliation: Harbin Institute of Technology
+    search_aliases:
+    - au:"Ting Liu"
+    focus:
+    - NLP
+    - question answering
+    - information extraction
+  - name: Minlie Huang
+    citations_total: 35040
+    citation_source: Google Scholar search snippet
+    citation_snapshot_date: '2026-04-19'
+    current_affiliation: Tsinghua University
+    search_aliases:
+    - au:"Minlie Huang"
+    focus:
+    - dialog systems
+    - natural language generation
+    - text generation
+  - name: Bin Cui
+    citations_total: 24891
+    citation_source: Google Scholar search snippet
+    citation_snapshot_date: '2026-04-19'
+    current_affiliation: Peking University
+    search_aliases:
+    - au:"Bin Cui"
+    focus:
+    - database
+    - big data analytics
+    - ML systems
+  - name: Yang Liu
+    citations_total: 18469
+    citation_source: Google Scholar search snippet
+    citation_snapshot_date: '2026-04-19'
+    current_affiliation: Tsinghua University / AIR
+    search_aliases:
+    - au:"Yang Liu"
+    focus:
+    - NLP
+    - AI for Science
+    - LLM evaluation
+  - name: Yu-Feng Li
+    citations_total: 8208
+    citation_source: Google Scholar search snippet
+    citation_snapshot_date: '2026-04-19'
+    current_affiliation: Nanjing University
+    search_aliases:
+    - au:"Yu-Feng Li"
+    - au:"Yufeng Li"
+    focus:
+    - weakly supervised learning
+    - statistical learning
+    - optimization
 sources:
   arxiv:
     enabled: true
@@ -242,11 +477,13 @@ sources:
     - math.OC
     - math.ST
     queries:
-    - (au:"Yoshua Bengio" OR au:"Geoffrey Hinton" OR au:"Yann LeCun" OR au:"Michael I Jordan" OR au:"Michael I. Jordan")
-    - (au:"Aaron Courville" OR au:"Andrew Y Ng" OR au:"Andrew Ng" OR au:"Fei-Fei Li" OR au:"Juergen Schmidhuber" OR au:"Jürgen Schmidhuber")
-    - (au:"Christopher D Manning" OR au:"Christopher Manning" OR au:"Dan Jurafsky" OR au:"Daniel Jurafsky" OR au:"Percy Liang" OR au:"Zoubin Ghahramani")
-    - (au:"Bernhard Schoelkopf" OR au:"Bernhard Scholkopf" OR au:"Bernhard Schölkopf" OR au:"Christopher M Bishop" OR au:"Christopher Bishop" OR au:"Peter L Bartlett" OR au:"Peter Bartlett")
-    - (au:"Sanjeev Arora" OR au:"Shai Shalev-Shwartz" OR au:"Tengyu Ma" OR au:"Sebastien Bubeck" OR au:"Sébastien Bubeck")
+    - (au:"Yoshua Bengio" OR au:"Geoffrey Hinton" OR au:"Kaiming He" OR au:"Jian Sun" OR au:"Yann LeCun" OR au:"Michael I Jordan" OR au:"Michael I. Jordan" OR au:"Aaron Courville")
+    - (au:"Fei-Fei Li" OR au:"Juergen Schmidhuber" OR au:"Jürgen Schmidhuber" OR au:"Christopher D Manning" OR au:"Christopher Manning" OR au:"Andrew Y Ng" OR au:"Andrew Ng" OR au:"Bernhard Schoelkopf")
+    - (au:"Bernhard Scholkopf" OR au:"Bernhard Schölkopf" OR au:"Christopher M Bishop" OR au:"Christopher Bishop" OR au:"Qiang Yang" OR au:"Percy Liang" OR au:"Zoubin Ghahramani" OR au:"Zhi-Hua Zhou")
+    - (au:"Zhihua Zhou" OR au:"Zhou Zhi-Hua" OR au:"Dan Jurafsky" OR au:"Daniel Jurafsky" OR au:"Tie-Yan Liu" OR au:"Tie Yan Liu" OR au:"Tieyan Liu" OR au:"Dahua Lin")
+    - (au:"Zhiyuan Liu" OR au:"Furu Wei" OR au:"Maosong Sun" OR au:"Tong Zhang" OR au:"Jie Tang" OR au:"Tang Jie" OR au:"Wanli Ouyang" OR au:"Peter L Bartlett")
+    - (au:"Peter Bartlett" OR au:"Jun Zhu" OR au:"Ji-Rong Wen" OR au:"Jirong Wen" OR au:"Sanjeev Arora" OR au:"Shai Shalev-Shwartz" OR au:"Hang Li" OR au:"Tengyu Ma")
+    - (au:"Sebastien Bubeck" OR au:"Sébastien Bubeck" OR au:"Ting Liu" OR au:"Minlie Huang" OR au:"Bin Cui" OR au:"Yang Liu" OR au:"Yu-Feng Li" OR au:"Yufeng Li")
     days_back_daily: 21
     days_back_weekly: 90
     max_results_per_query: 14
@@ -311,6 +548,20 @@ filters:
   - multimodal
   - vision-language model
   - distillation
+  - Chinese LLM
+  - Mandarin
+  - bilingual
+  - multilingual
+  - Qwen
+  - DeepSeek
+  - GLM
+  - ERNIE
+  - InternLM
+  - InternVL
+  - Hunyuan
+  - Pangu
+  - PanGu
+  - Baichuan
   exclude_keywords:
   - robot
   - robotics
@@ -352,6 +603,7 @@ digest:
   - alignment_and_posttraining
   - mechanistic_interpretability
   - multimodal_foundation_models
+  - china_ai_watch
   track_definitions:
     optimization_and_generalization:
       label: Optimization & Generalization
@@ -392,3 +644,19 @@ digest:
       - foundation model
       - image-text
       - video-language
+    china_ai_watch:
+      label: China AI Watch
+      keywords:
+      - Qwen
+      - DeepSeek
+      - GLM
+      - ERNIE
+      - InternLM
+      - InternVL
+      - Hunyuan
+      - Pangu
+      - PanGu
+      - Baichuan
+      - Chinese LLM
+      - Mandarin
+      - bilingual

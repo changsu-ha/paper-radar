@@ -47,3 +47,61 @@ entities:
     label: Universite de Montreal
     aliases:
       - Université de Montréal
+  tsinghua_university:
+    label: Tsinghua University
+    aliases:
+      - Tsinghua
+      - THUNLP
+      - Knowledge Engineering Group
+      - KEG
+      - Tsinghua AIR
+  peking_university:
+    label: Peking University
+    aliases:
+      - PKU
+  nanjing_university:
+    label: Nanjing University
+    aliases:
+      - Nanjing U
+      - LAMDA
+  renmin_university_of_china:
+    label: Renmin University of China
+    aliases:
+      - Renmin University
+      - RUC
+      - Gaoling School of Artificial Intelligence
+  harbin_institute_of_technology:
+    label: Harbin Institute of Technology
+    aliases:
+      - HIT
+      - HIT-SCIR
+  shanghai_jiao_tong_university:
+    label: Shanghai Jiao Tong University
+    aliases:
+      - Shanghai Jiao Tong
+      - SJTU
+  zhejiang_university:
+    label: Zhejiang University
+    aliases:
+      - Zhejiang U
+      - ZJU
+  university_of_science_and_technology_of_china:
+    label: University of Science and Technology of China
+    aliases:
+      - USTC
+      - University of Science & Technology of China
+  fudan_university:
+    label: Fudan University
+    aliases:
+      - Fudan
+  hong_kong_ust:
+    label: The Hong Kong University of Science and Technology
+    aliases:
+      - HKUST
+      - HKUST(GZ)
+      - Hong Kong University of Science and Technology
+  chinese_university_of_hong_kong:
+    label: The Chinese University of Hong Kong
+    aliases:
+      - CUHK
+      - Chinese University of Hong Kong

@@ -22,6 +22,10 @@
 - `efficient_ml_systems.yaml`: distillation, quantization, MoE systems, inference/training efficiency
 - `meta_learning_automl.yaml`: meta-learning, NAS, AutoML, test-time adaptation
 
+참고:
+
+- 주요 대학 / 주요 연구소 OpenAlex affiliation catalog와 통합된 `paper_radar_config_outstanding_scholars.yaml` 설명은 `README_catalogs.md`를 참고하세요.
+
 추천 사용법:
 
 1. 먼저 broad config로 1주 정도 신호를 봅니다.

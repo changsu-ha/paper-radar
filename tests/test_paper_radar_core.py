@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import datetime as dt
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -705,6 +706,32 @@ class PaperRadarCoreTests(unittest.TestCase):
 
             with patch.dict("os.environ", {"PAPER_RADAR_CONFIG": str(config_path)}, clear=False):
                 self.assertEqual(get_config_path([]), config_path)
+
+    def test_repo_catalog_configs_include_merged_china_entities(self) -> None:
+        universities = load_openalex_affiliation_catalog("configs/paper_radar_config_major_universities.yaml")
+        labs = load_openalex_affiliation_catalog("configs/paper_radar_config_major_research_labs.yaml")
+
+        self.assertIn("tsinghua_university", universities.entities)
+        self.assertIn("hong_kong_ust", universities.entities)
+        self.assertIn("deepseek_ai", labs.entities)
+        self.assertIn("microsoft_research_asia", labs.entities)
+
+    def test_repo_outstanding_scholars_config_merges_china_entries_without_duplicate_names(self) -> None:
+        config = load_config("configs/paper_radar_config_outstanding_scholars.yaml")
+        scholars = config["curation"]["scholars"]
+        names = [str(scholar["name"]) for scholar in scholars]
+        normalized_names = {
+            " ".join(re.sub(r"[^a-z0-9]+", " ", name.casefold()).split())
+            for name in names
+        }
+
+        self.assertIn("Kaiming He", names)
+        self.assertIn("Sébastien Bubeck", names)
+        self.assertIn("Qiang Yang", names)
+        self.assertEqual(len(names), len(normalized_names))
+        self.assertTrue(config["sources"]["arxiv"]["queries"])
+        self.assertTrue(any('au:"Kaiming He"' in query for query in config["sources"]["arxiv"]["queries"]))
+        self.assertIn("china_ai_watch", config["digest"]["tracks"])
 
 
 def make_paper(
