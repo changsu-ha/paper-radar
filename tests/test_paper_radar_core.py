@@ -41,6 +41,7 @@ from paper_radar_core import (
     parse_keywords_input,
     rank_papers,
     save_config,
+    SemanticScholarClient,
 )
 
 
@@ -292,6 +293,7 @@ class PaperRadarCoreTests(unittest.TestCase):
                 "results": [
                     {
                         "id": "https://openalex.org/W123",
+                        "title": "Robot World Models",
                         "cited_by_count": 19,
                         "doi": "https://doi.org/10.1000/openalex",
                         "primary_location": {"source": {"display_name": "OpenReview"}},
@@ -330,6 +332,96 @@ class PaperRadarCoreTests(unittest.TestCase):
                     "id": "https://openalex.org/i123",
                     "display_name": "Stanford University",
                     "ror": "https://ror.org/00f54p054",
+                }
+            ],
+        )
+
+    def test_openalex_skips_incompatible_result_and_uses_title_match(self) -> None:
+        paper = make_paper(
+            title="Switch: Learning Agile Skills Switching for Humanoid Robots",
+            abstract="Humanoid control with agile skill switching.",
+            external_id="2604.14834v1",
+        )
+        paper.doi = "10.48550/arxiv.2508.08241"
+        fetch_options = FetchOptions(
+            queries=["humanoid"],
+            categories=["cs.RO"],
+            days_back=7,
+            max_results_per_query=5,
+            enable_semanticscholar=False,
+            enable_openalex=True,
+        )
+
+        wrong_response = Mock(status_code=200)
+        wrong_response.raise_for_status = Mock()
+        wrong_response.json = Mock(
+            return_value={
+                "results": [
+                    {
+                        "id": "https://openalex.org/Wwrong",
+                        "title": "BeyondMimic: From Motion Tracking to Versatile Humanoid Control via Guided Diffusion",
+                        "cited_by_count": 99,
+                        "primary_location": {"source": {"display_name": "Wrong Venue"}},
+                        "open_access": {"is_oa": True},
+                        "authorships": [
+                            {
+                                "institutions": [
+                                    {
+                                        "id": "https://openalex.org/I999",
+                                        "display_name": "Wrong Institute",
+                                        "ror": None,
+                                    }
+                                ]
+                            }
+                        ],
+                    }
+                ]
+            }
+        )
+        empty_response = Mock(status_code=200)
+        empty_response.raise_for_status = Mock()
+        empty_response.json = Mock(return_value={"results": []})
+        correct_response = Mock(status_code=200)
+        correct_response.raise_for_status = Mock()
+        correct_response.json = Mock(
+            return_value={
+                "results": [
+                    {
+                        "id": "https://openalex.org/Wcorrect",
+                        "title": "Switch: Learning Agile Skills Switching for Humanoid Robots",
+                        "cited_by_count": 12,
+                        "primary_location": {"source": {"display_name": "Correct Venue"}},
+                        "open_access": {"is_oa": True},
+                        "authorships": [
+                            {
+                                "institutions": [
+                                    {
+                                        "id": "https://openalex.org/I123",
+                                        "display_name": "Stanford University",
+                                        "ror": None,
+                                    }
+                                ]
+                            }
+                        ],
+                    }
+                ]
+            }
+        )
+
+        with patch("paper_radar_core.requests.get", side_effect=[wrong_response, empty_response, correct_response]):
+            with patch("paper_radar_core.time.sleep", return_value=None):
+                enriched, status = enrich_openalex([paper], fetch_options, env={}, sleep_s=0.0)
+
+        self.assertEqual(status["enriched"], 1)
+        self.assertEqual(enriched[0].venue, "Correct Venue")
+        self.assertEqual(enriched[0].source_metadata["openalex"]["id"], "https://openalex.org/Wcorrect")
+        self.assertEqual(
+            enriched[0].source_metadata["openalex"]["institutions"],
+            [
+                {
+                    "id": "https://openalex.org/i123",
+                    "display_name": "Stanford University",
+                    "ror": None,
                 }
             ],
         )
@@ -421,6 +513,38 @@ class PaperRadarCoreTests(unittest.TestCase):
                 enrich_openalex([paper], fetch_options, env={"OPENALEX_API_KEY": "secret-key"}, sleep_s=0.0)
 
         self.assertEqual(mock_get.call_args.kwargs["params"]["api_key"], "secret-key")
+
+    def test_semantic_scholar_skips_incompatible_top_result(self) -> None:
+        paper = make_paper(
+            "Switch: Learning Agile Skills Switching for Humanoid Robots",
+            "Humanoid control with agile skill switching.",
+            external_id="2604.14834v1",
+        )
+        response = Mock(status_code=200)
+        response.json = Mock(
+            return_value={
+                "data": [
+                    {
+                        "title": "BeyondMimic: From Motion Tracking to Versatile Humanoid Control via Guided Diffusion",
+                        "citationCount": 999,
+                        "venue": "Wrong Venue",
+                        "externalIds": {"DOI": "10.1000/wrong"},
+                    },
+                    {
+                        "title": "Switch: Learning Agile Skills Switching for Humanoid Robots",
+                        "citationCount": 5,
+                        "venue": "Correct Venue",
+                        "externalIds": {"DOI": "10.1000/correct"},
+                    },
+                ]
+            }
+        )
+
+        with patch("paper_radar_core.requests.get", return_value=response):
+            enriched = SemanticScholarClient().enrich_title(paper)
+
+        self.assertEqual(enriched.venue, "Correct Venue")
+        self.assertEqual(enriched.doi, "10.1000/correct")
 
     def test_openalex_priority_catalog_bonus_applies_once_and_records_matches(self) -> None:
         paper = make_paper("Optimization paper", "Optimization and training dynamics.")

@@ -15,6 +15,7 @@ import time
 import xml.etree.ElementTree as ET
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field, fields
+from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any, Iterable, Iterator, Mapping, Sequence
 
@@ -539,6 +540,33 @@ def normalize_title(title: str) -> str:
     text = re.sub(r"[^0-9a-z]+", " ", text)
     text = re.sub(r"\s+", " ", text)
     return text
+
+
+def titles_compatible(expected: str | None, candidate: str | None) -> bool:
+    left = normalize_title(expected or "")
+    right = normalize_title(candidate or "")
+    if not left or not right:
+        return False
+    if left == right:
+        return True
+
+    left_tokens = left.split()
+    right_tokens = right.split()
+    if len(left_tokens) < 3 or len(right_tokens) < 3:
+        return False
+
+    if left in right or right in left:
+        shorter = min(len(left_tokens), len(right_tokens))
+        if shorter >= 4:
+            return True
+
+    left_set = set(left_tokens)
+    right_set = set(right_tokens)
+    overlap = len(left_set & right_set)
+    recall = overlap / max(1, min(len(left_set), len(right_set)))
+    jaccard = overlap / max(1, len(left_set | right_set))
+    ratio = SequenceMatcher(None, left, right).ratio()
+    return recall >= 0.8 and (jaccard >= 0.5 or ratio >= 0.82)
 
 
 def normalize_affiliation_name(value: str | None) -> str:
@@ -1307,7 +1335,16 @@ class SemanticScholarClient:
             return paper
         if not data:
             return paper
-        best = data[0]
+        best = next(
+            (
+                candidate
+                for candidate in data
+                if titles_compatible(paper.title, candidate.get("title"))
+            ),
+            None,
+        )
+        if best is None:
+            return paper
         paper.citations = _max_int(paper.citations, best.get("citationCount"))
         paper.venue = paper.venue or best.get("venue")
         fos = best.get("fieldsOfStudy") or []
@@ -1379,8 +1416,9 @@ class OpenAlexClient:
         for params in self._candidate_queries(paper):
             payload = self._query(params)
             results = payload.get("results") or []
-            if results:
-                return results[0]
+            for candidate in results:
+                if titles_compatible(paper.title, candidate.get("title")):
+                    return candidate
         return None
 
     def _candidate_queries(self, paper: Paper) -> list[dict[str, Any]]:
